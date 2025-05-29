@@ -1,0 +1,17 @@
+packages:
+  - dplyr
+  - tidyr
+  - purrr
+  - stringr
+  - rlang
+  - survey
+  - haven
+  - readxl
+  - knitr
+  - kableExtra
+  - ggplot2
+  - ggtext
+  - glue
+  - grid
+  - broom 
+  

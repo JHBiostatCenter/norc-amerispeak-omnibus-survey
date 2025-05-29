@@ -1,0 +1,340 @@
+---
+title: "2024 Presidential Election: Voter Demographics and Policy Positions"
+author: "Erik Westlund"
+date: "2025-01-16"
+date-modified: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format: 
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 5
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 10
+)
+
+# Load all required packages and source utility files
+source("project-setup.R")
+
+# Load analysis data and create survey design
+load_analysis_data()
+
+```
+
+# Table 1: Demographic Characteristics by 2024 Presidential Vote Choice
+
+Table 1 presents demographic characteristics of the survey respondents:
+
+- Age
+- Race/ethnicity
+- Gender
+- Education level
+- Region
+- Party identification
+- Income
+
+The table shows:
+
+- The overall distribution of these characteristics in the sample
+- How they are distributed among those who voted for the Democratic candidate (Kamala Harris)
+- How they are distributed among those who voted for the Republican candidate (Donald Trump) in the 2024 election
+
+All percentages are weighted to reflect the national population.
+
+```{r table_1}
+#| label: table-1
+#| echo: false
+
+# Most straight forward approach is just to use a simple tab function on filtered data to get the counts
+
+table_1_vars <- c(
+  "age_cat" = "Age",
+  "race_eth_cat" = "Race/Ethnicity",
+  "gender_cat" = "Gender",
+  "education_cat" = "Education",
+  "region_cat" = "Region",
+  "PartyID5" = "Party Identification",
+  "income_cat" = "Income"
+)
+
+table_1_cross_classifiers = c("voted_dem_2024", "voted_rep_2024")
+
+table_1_results <- list()
+for(var in names(table_1_vars)) {
+  table_1_results[[var]]$overall <- data |> tab(var)
+  
+  for(cross_var in table_1_cross_classifiers) {
+    table_1_results[[var]][[cross_var]] <- data |> tab(var, cross_var)
+  }
+}
+
+generate_table_1 <- function(table_1_results, table_1_vars) {
+  summary_table <- tibble()
+  for (var_name in names(table_1_vars)) {
+    all_cats <- table_1_results[[var_name]]$overall |>
+      select(Category = 1) |>
+      mutate(Category = as.character(Category)) |>
+      filter(!is.na(Category))
+
+    overall <- table_1_results[[var_name]]$overall |>
+      select(Category = 1, `Overall % (SE)` = pct_wtd) |>
+      mutate(Category = as.character(Category))
+
+    voted_dem_2024 <- table_1_results[[var_name]]$voted_dem_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Democratic Voters 2024 % (SE)` = pct_wtd) |>
+      mutate(Category = as.character(Category))
+
+    voted_rep_2024 <- table_1_results[[var_name]]$voted_rep_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Republican Voters 2024 % (SE)` = pct_wtd) |>
+      mutate(Category = as.character(Category))
+
+    var_table <- all_cats |>
+      left_join(overall, by = "Category") |>
+      left_join(voted_dem_2024, by = "Category") |>
+      left_join(voted_rep_2024, by = "Category") |>
+      mutate(
+        `Demographic Characteristic` = "",
+        `Democratic Voters 2024 % (SE)` = replace_na(`Democratic Voters 2024 % (SE)`, "0.0 (0.0)"),
+        `Republican Voters 2024 % (SE)` = replace_na(`Republican Voters 2024 % (SE)`, "0.0 (0.0)"),
+        `Overall % (SE)` = replace_na(`Overall % (SE)`, "0.0 (0.0)")
+      ) |>
+      relocate(`Demographic Characteristic`)
+
+    var_table$`Demographic Characteristic`[1] <- table_1_vars[[var_name]]
+    summary_table <- bind_rows(summary_table, var_table)
+  }
+  return(summary_table)
+}
+
+table_1 <- generate_table_1(table_1_results, table_1_vars) 
+
+table_1 |> kable()
+```
+
+# Table 2: Policy Positions by Voting Pattern (2020-2024)
+
+Table 2 examines voting patterns and party switching between the 2020 and 2024 elections. It shows the distribution of responses across various policy and political questions, broken down by:
+
+- Those who consistently voted Democratic in both elections
+- Those who consistently voted Republican in both elections
+- Those who switched from Democratic to Republican voting
+
+The table includes questions about support for various policies and political positions, with responses ranging from "Strongly support" to "Strongly oppose". This helps identify potential factors associated with party switching behavior.
+
+```{r table_2_3}
+#| label: table-2-3
+#| echo: false
+
+table_2_3_vars <- c(
+   "JHU4G",
+   "JHU6B",
+   "JHU5C",
+   "JHU5B",
+   "JHU4G",
+   "JHU4A",
+   "JHU4C",
+   "JHU6A",
+   "JHU4E",
+   "JHU4D",
+   "JHU6G",
+   "JHU4F",
+   "JHU5A",
+   "JHU5D",
+   "JHU5E",
+   "JHU5F",
+   "JHU4B",
+   "JHU6F",
+   "JHU6E",
+   "JHU5G",
+   "JHU6D",
+   "JHU6C"
+)
+```
+
+```{r table_2}
+#| label: table-2
+#| echo: false
+
+table_2_cross_classifiers = c("dem_2020_2024", "rep_2020_2024", "dem_to_rep_2024")
+
+# Table 2 results
+table_2_results <- list()
+for(var in table_2_3_vars) {
+  var_recoded <- paste0(var, "_recoded")
+
+  for(cross_var in table_2_cross_classifiers) {
+    table_2_results[[var]][[cross_var]] <- data |> tab(var_recoded, cross_var)
+  }
+  
+  table_2_results[[var]]$overall <- data |> tab(var_recoded)
+}
+
+# Create Table
+generate_table_2 <- function(table_results, table_vars, meta) {
+  summary_table <- tibble()
+
+  for (var_name in table_vars) {
+    var_name_recoded <- paste0(var_name, "_recoded")
+    
+    topic_label <- meta |> filter(var == var_name) |> pull(topic)
+
+    overall <- table_results[[var_name]]$overall |>
+      select(Category = 1, `Overall % (SE)` = pct_wtd) |>
+      filter(!is.na(Category)) |>
+      filter(Category != "SKIPPED ON WEB") |> 
+      mutate(Category = as.character(Category))
+
+    dem_2020_2024 <- table_results[[var_name]]$dem_2020_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Consistent Democratic Voters % (SE)` = pct_wtd) |> 
+      filter(Category != "SKIPPED ON WEB") |> 
+      mutate(Category = as.character(Category))
+
+    rep_2020_2024 <- table_results[[var_name]]$rep_2020_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Consistent Republican Voters % (SE)` = pct_wtd) |> 
+      filter(Category != "SKIPPED ON WEB") |> 
+      mutate(Category = as.character(Category))
+
+    voted_rep_from_dem_2024 <- table_results[[var_name]]$dem_to_rep_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Democratic to Republican Switchers % (SE)` = pct_wtd) |> 
+      filter(Category != "SKIPPED ON WEB") |> 
+      mutate(Category = as.character(Category))
+
+    var_table <- dem_2020_2024 |>
+      left_join(rep_2020_2024, by = "Category") |>
+      left_join(voted_rep_from_dem_2024, by = "Category") |>
+      left_join(overall, by = "Category") |>
+      mutate(
+        `Policy Position` = "",
+        `Consistent Democratic Voters % (SE)` = replace_na(`Consistent Democratic Voters % (SE)`, "0.0 (0.0)"),
+        `Consistent Republican Voters % (SE)` = replace_na(`Consistent Republican Voters % (SE)`, "0.0 (0.0)"),
+        `Democratic to Republican Switchers % (SE)` = replace_na(`Democratic to Republican Switchers % (SE)`, "0.0 (0.0)"),
+        `Overall % (SE)` = replace_na(`Overall % (SE)`, "0.0 (0.0)")
+      ) |>
+      relocate(`Policy Position`)
+
+    var_table <- var_table |>
+      mutate(`Policy Position` = ifelse(row_number() == 1, topic_label, ""))
+
+    summary_table <- bind_rows(summary_table, var_table)
+  }
+
+  return(summary_table)
+}
+
+table_2 <- generate_table_2(table_2_results, table_2_3_vars, meta) 
+table_2 |> kable()
+```
+
+# Table 3: Policy Positions by 2024 Voting Behavior
+
+Table 3 analyzes the relationship between policy positions and voting behavior in the 2024 election. It breaks down responses to various policy questions by:
+
+- Those who voted for the Democratic candidate (Kamala Harris)
+- Those who voted for the Republican candidate (Donald Trump)
+- Those who were new Republican voters (switched from other parties or non-voters)
+- The overall distribution in the sample
+
+This table helps identify which policy positions are most strongly associated with different voting patterns in the 2024 election.
+
+```{r table_3}
+#| label: table-3
+#| echo: false
+#| message: false
+#| warning: false
+
+# Table 3 results
+table_3_cross_classifiers = c("voted_dem_2024", "voted_rep_2024", "new_rep_2024")
+table_3_results <- list()
+for(var in table_2_3_vars) {
+  var_recoded <- paste0(var, "_recoded")
+
+  for(cross_var in table_3_cross_classifiers) {
+    table_3_results[[var]][[cross_var]] <- data |> tab(var_recoded, cross_var)
+  }
+  
+  table_3_results[[var]]$overall <- data |> tab(var_recoded)
+}
+
+# Create Table
+generate_table_3 <- function(table_results, table_vars, meta) {
+  summary_table <- tibble()
+
+  for (var_name in table_vars) {
+    var_name_recoded <- paste0(var_name, "_recoded")
+    
+    topic_label <- meta |> filter(var == var_name) |> pull(topic)
+
+    overall <- table_results[[var_name]]$overall |>
+      select(Category = 1, `Overall % (SE)` = pct_wtd) |>
+      filter(!is.na(Category)) |>
+      filter(Category != "SKIPPED ON WEB") |> 
+      filter(Category != "DON'T KNOW") |> 
+      mutate(Category = as.character(Category))
+
+    voted_dem_2024 <- table_results[[var_name]]$voted_dem_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Democratic Voters 2024 % (SE)` = pct_wtd) |> 
+      filter(Category != "SKIPPED ON WEB") |> 
+      filter(Category != "DON'T KNOW") |> 
+      mutate(Category = as.character(Category))
+
+    voted_rep_2024 <- table_results[[var_name]]$voted_rep_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `Republican Voters 2024 % (SE)` = pct_wtd) |> 
+      filter(Category != "SKIPPED ON WEB") |> 
+      filter(Category != "DON'T KNOW") |> 
+      mutate(Category = as.character(Category))
+
+    voted_new_rep_2024 <- table_results[[var_name]]$new_rep_2024 |>
+      filter(group == "TRUE") |>
+      select(Category = 1, `New Republican Voters 2024 % (SE)` = pct_wtd) |> 
+      filter(Category != "SKIPPED ON WEB") |> 
+      filter(Category != "DON'T KNOW") |> 
+      mutate(Category = as.character(Category))
+
+    var_table <- voted_dem_2024 |>
+      left_join(voted_rep_2024, by = "Category") |>
+      left_join(voted_new_rep_2024, by = "Category") |>
+      left_join(overall, by = "Category") |>
+      mutate(
+        `Policy Position` = "",
+        `Democratic Voters 2024 % (SE)` = replace_na(`Democratic Voters 2024 % (SE)`, "0.0 (0.0)"),
+        `Republican Voters 2024 % (SE)` = replace_na(`Republican Voters 2024 % (SE)`, "0.0 (0.0)"),
+        `New Republican Voters 2024 % (SE)` = replace_na(`New Republican Voters 2024 % (SE)`, "0.0 (0.0)"),
+        `Overall % (SE)` = replace_na(`Overall % (SE)`, "0.0 (0.0)")
+      ) |>
+      relocate(`Policy Position`)
+
+    var_table <- var_table |>
+      mutate(`Policy Position` = ifelse(row_number() == 1, topic_label, ""))
+
+    summary_table <- bind_rows(summary_table, var_table)
+  }
+
+  return(summary_table)
+}
+
+table_3 <- generate_table_3(table_3_results, table_2_3_vars, meta) 
+table_3 |> kable()
+```

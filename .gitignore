@@ -1,0 +1,41 @@
+# R-specific files
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+renv/
+*.Rproj
+
+# macOS-specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows-specific files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project-specific files
+data/
+!data/.gitkeep
+images/
+!images/.gitkeep
+docs/*
+raw/*
+*.html
+*.docx
+*.doc
+
+# Quarto cache and output
+*_cache/
+*_cache/*
+*_files/
+*_files/*

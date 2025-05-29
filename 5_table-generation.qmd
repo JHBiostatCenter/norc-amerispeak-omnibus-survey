@@ -1,0 +1,611 @@
+---
+title: "Table Generation for NORC AmeriSpeak Omnibus"
+author: "Erik Westlund"
+date: "2025-03-28"
+date-modified: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format: 
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 6
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
+    html-math-method: katex
+  docx: default
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 10
+)
+
+# Load all required packages and source utility files
+source("project-setup.R")
+# Load analysis data and create survey design
+load_analysis_data()
+
+# Ensure recoded variables exist
+if (!all(paste0(meta$var, "_recoded") %in% names(data))) {
+  stop("Recoded variables are missing. Please run 1_norc-data-tabulation.qmd first.")
+}
+
+```
+
+# Introduction
+
+This document generates formatted tables for the NORC AmeriSpeak Omnibus analysis, focusing on key demographic and policy position comparisons.
+
+## Demographics and Key Variables
+
+```{r table_1, echo=FALSE, message=FALSE, warning=FALSE}
+
+table_1_vars <- c(
+  "Age" = "age_cat",
+  "Race/Ethnicity" = "race_eth_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Region" = "region_cat",
+  "Party Identification" = "PartyID5",
+  "2020 Vote" = "candidate_2020",
+  "2024 Vote" = "candidate_2024",
+  "Vote Classification" = "party_switch_analysis"
+)
+
+
+t_data <- data |>
+  select(
+    CaseId, WEIGHT_EN,
+    all_of(unname(table_1_vars))
+  ) |>
+  mutate(
+    candidate_2020 = fct_drop(factor(candidate_2020, exclude = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"))),
+    candidate_2024 = fct_drop(factor(candidate_2024, exclude = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")))
+  )
+  
+svy_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = t_data)
+
+# Get Table 1 results
+table_1 <- map_dfr(names(table_1_vars), function(label) {
+  var <- table_1_vars[[label]]
+  values <- na.omit(values <- levels(droplevels(factor(t_data[[var]]))))
+  
+  # Header row for the variable
+  var_header <- tibble(
+    value = label,
+    unweighted_n = NA,
+    weighted_n = NA,
+    se = NA,
+    ci_lb = NA,
+    ci_ub = NA
+  )
+  
+  # Category-level rows
+  category_rows <- map_dfr(values, function(val) {
+    # Unweighted N
+    unwt_n <- sum(t_data[[var]] == val, na.rm = TRUE)
+    
+    # Create 0/1 indicator for this value
+    temp_data <- t_data |>
+      filter(WEIGHT_EN > 1e-10) |> 
+      mutate(temp = ifelse(as.character(.data[[var]]) == as.character(val), 1, 0)) |> 
+      filter(!is.na(temp), !is.na(WEIGHT_EN))
+
+    temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+    
+    svy_result <- svytotal(~temp, temp_design)
+    
+    wt_n <- coef(svy_result)[1]
+    se <- SE(svy_result)[1]
+          
+      tibble(
+        value = as.character(val),
+        unweighted_n = unwt_n,
+        weighted_n   = round(wt_n, 1),
+        se           = round(se, 1),
+        ci_lb        = round(wt_n - 1.96 * se, 1),
+        ci_ub        = round(wt_n + 1.96 * se, 1)
+      ) |>
+        mutate(across(c(unweighted_n, weighted_n, se, ci_lb, ci_ub),
+                ~ format(.x, nsmall = 1)))
+  })
+  
+  bind_rows(var_header, category_rows)
+})
+
+
+svy_total <- svytotal(~one, update(svy_design, one = 1))
+wt_total <- coef(svy_total)[1]
+se_total <- SE(svy_total)[1]
+ci_lb_total <- wt_total - 1.96 * se_total
+ci_ub_total <- wt_total + 1.96 * se_total
+
+table_1_totals <- tibble(
+  value = "All Respondents",
+  unweighted_n = nrow(t_data),
+  weighted_n   = format(round(wt_total, 1), nsmall = 1),
+  se           = format(round(se_total, 1), nsmall = 1),
+  ci_lb        = format(round(ci_lb_total, 1), nsmall = 1),
+  ci_ub        = format(round(ci_ub_total, 1), nsmall = 1)
+)
+
+table_1_totals <- rbind(
+  tibble(
+    value = "Total",
+    unweighted_n = "",
+    weighted_n = "",
+    se = "",
+    ci_lb = "",
+    ci_ub = ""
+  ),
+  table_1_totals
+) |> mutate(across(c(unweighted_n, weighted_n, se, ci_lb, ci_ub),
+                ~ format(.x, nsmall = 1)))
+
+# Bind to the full table
+table_1_final <- bind_rows(table_1, table_1_totals)
+
+table_1_clean <- table_1_final |>
+  mutate(across(everything(), ~ ifelse(is.na(.), "", .))) |> 
+  rename(
+    "Variable" = value,
+    "N (Unweighted)" = unweighted_n,
+    "N (Weighted)" = weighted_n,
+    "SE" = se,
+    "CI Lower" = ci_lb,
+    "CI Upper" = ci_ub
+  )
+
+table_1_clean |> kable()
+
+
+```
+
+## Vote Status By Demographics
+
+```{r table_2, echo=FALSE, message=FALSE, warning=FALSE}
+table_2_vars <- c(
+  "Age" = "age_cat",
+  "Race/Ethnicity" = "race_eth_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Region" = "region_cat",
+  "Party Identification" = "PartyID5",
+  "2020 Vote" = "candidate_2020",
+  "2024 Vote" = "candidate_2024"
+)
+
+svy_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = t_data)
+
+party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+col_names <- c("Percent Democrat (SE)", "Percent Republican (SE)", "Percent New Democrat (SE)", "Percent New Republican (SE)")
+
+# Build the table
+table_2 <- map_dfr(names(table_2_vars), function(label) {
+  var <- table_2_vars[[label]]
+
+  # Get levels used in this variable
+  groups <- levels(droplevels(factor(t_data[[var]])))
+
+  # Create dummy header row for the variable
+  header_row <- tibble(
+    Category = label,
+    !!col_names[1] := "",
+    !!col_names[2] := "",
+    !!col_names[3] := "",
+    !!col_names[4] := ""
+  )
+
+  # Category-level rows
+  category_rows <- map_dfr(groups, function(level_val) {
+    subset_design <- subset(svy_design,
+      !is.na(get(var)) & get(var) == level_val & !is.na(party_switch_analysis))
+
+    prop <- svymean(~factor(party_switch_analysis, levels = party_levels),
+                    design = subset_design, na.rm = TRUE)
+
+    pct <- 100 * as.numeric(prop)
+    se  <- 100 * as.numeric(SE(prop))
+    names(pct) <- party_levels
+    names(se)  <- party_levels
+
+    tibble(
+      Category = as.character(level_val),
+      !!col_names[1] := sprintf("%.1f (%.1f)", pct["Democrat"], se["Democrat"]),
+      !!col_names[2] := sprintf("%.1f (%.1f)", pct["Republican"], se["Republican"]),
+      !!col_names[3] := sprintf("%.1f (%.1f)", pct["New Democrat"], se["New Democrat"]),
+      !!col_names[4] := sprintf("%.1f (%.1f)", pct["New Republican"], se["New Republican"])
+    )
+  })
+
+  bind_rows(header_row, category_rows)
+})
+
+table_2 |> kable()
+```
+
+
+## JHU 1-3
+
+Question:
+
+JHU1:
+We're interested in what you think are important health issues facing the nation. Please assess how important each of the following is: [topic]
+
+JHU 2:
+"Here are more health issues to consider. Please assess how important each of the following is: [topic]"
+
+JHU 3:
+"Here are more health issues to consider. Please assess how important each of the following is: [topic]"
+
+
+```{r table_3, echo=FALSE, message=FALSE, warning=FALSE}
+# Block of variables
+jhu1_vars <- paste0("JHU1", LETTERS[1:7])
+jhu2_vars <- paste0("JHU2", LETTERS[1:6])
+jhu3_vars <- paste0("JHU3", LETTERS[1:7])
+
+jhu1_2_3_vars <- c(jhu1_vars, jhu2_vars, jhu3_vars)
+
+# Filter meta for this block
+meta_jhu1_2_3 <- meta |> filter(var %in% jhu1_2_3_vars)
+
+# Party categories to loop across
+party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+
+# Build table
+table_jhu1_2_3 <- map_dfr(jhu1_2_3_vars, function(var) {
+  topic <- meta_jhu1_2_3 |> filter(var == !!var) |> pull(topic)
+
+  non_substantive <- c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+
+  # Prepare data for chi-square
+  temp_data_all <- data |>
+    filter(
+      !is.na(get(var)),
+      !get(var) %in% non_substantive,
+      !is.na(party_switch_analysis)
+    ) |>
+    mutate(.var = droplevels(factor(get(var))))
+
+  temp_design_all <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data_all)
+
+  # Attempt chi-square test
+  chi_result <- tryCatch({
+    svychisq(~.var + party_switch_analysis, design = temp_design_all)
+  }, error = function(e) NULL)
+
+  chi_stat <- if (!is.null(chi_result)) round(chi_result$statistic, 1) else NA
+  p_val    <- if (!is.null(chi_result)) chi_result$p.value else NA
+  sig      <- if (!is.na(p_val) && p_val < 0.05) "*" else ""
+
+  # Topic header with asterisk if significant
+  header_row <- tibble(
+    Response = paste0(topic, sig),
+    `Democrat, Percent (SE)` = "",
+    `Republican, Percent (SE)` = "",
+    `New Democrat, Percent (SE)` = "",
+    `New Republican, Percent (SE)` = ""
+  )
+
+  # Get response categories
+  responses <- levels(droplevels(factor(data[[var]])))
+  responses <- responses[!responses %in% non_substantive]
+
+  # Response-level rows
+  category_rows <- map_dfr(responses, function(response) {
+    temp_data <- data |> 
+      filter(!is.na(get(var)), !is.na(party_switch_analysis)) |> 
+      mutate(temp = ifelse(as.character(get(var)) == response, 1, 0))
+
+    temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+    prop_result <- svyby(
+      ~temp,
+      ~party_switch_analysis,
+      design = temp_design,
+      svymean,
+      na.rm = TRUE,
+      drop.empty.groups = FALSE
+    )
+
+    prop_df <- tibble(
+      group = prop_result$party_switch_analysis,
+      pct = 100 * as.numeric(prop_result$temp),
+      se = 100 * as.numeric(SE(prop_result))
+    ) |>
+      right_join(tibble(group = party_levels), by = "group") |>
+      mutate(
+        pct = ifelse(is.na(pct), 0, pct),
+        se = ifelse(is.na(se), 0, se),
+        formatted = sprintf("%.1f (%.1f)", pct, se)
+      )
+
+    tibble(
+      Response = response,
+      `Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "Democrat"],
+      `Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "Republican"],
+      `New Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "New Democrat"],
+      `New Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "New Republican"]
+    )
+  })
+
+  # Chi-squared summary row
+  summary_row <- tibble(
+    Response = if (!is.na(p_val)) {
+      sprintf("X² = %.1f, p = %.3f%s", chi_stat, p_val, sig)
+    } else {
+      "Test skipped due to low cell counts"
+    },
+    `Democrat, Percent (SE)` = "",
+    `Republican, Percent (SE)` = "",
+    `New Democrat, Percent (SE)` = "",
+    `New Republican, Percent (SE)` = ""
+  )
+
+  bind_rows(header_row, category_rows, summary_row)
+})
+
+table_jhu1_2_3 |> kable()
+```
+
+An asterisk on the variable label indicates a statistically significant difference in response distributions across party groups (p < 0.05), based on a Rao–Scott chi-squared test of association.
+The reported X² statistic and p-value are survey-adjusted using the svychisq() function from the R survey package.*
+
+
+## JHU 4-6
+
+Question:
+
+JHU4:
+"Here is a list of specific policy goals. To what extent would you support or oppose them? : [topic]"
+
+JHU5:
+"Here are a few more specific policy goals. To what extent would you support or oppose them? [topic]"
+
+JHU6:
+"Here are a few additional specific policy goals. To what extent would you support or oppose them? [topic]"
+
+
+```{r table_4, echo=FALSE, message=FALSE, warning=FALSE}
+# Block of variables
+jhu4_vars <- paste0("JHU4", LETTERS[1:7])
+jhu5_vars <- paste0("JHU5", LETTERS[1:8])
+jhu6_vars <- paste0("JHU6", LETTERS[1:7])
+
+jhu4_5_6_vars <- c(jhu4_vars, jhu5_vars, jhu6_vars)
+
+# Filter meta for this block
+meta_jhu4_5_6 <- meta |> filter(var %in% jhu4_5_6_vars)
+
+# Party categories to loop across
+party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+
+# Build table
+table_jhu4_5_6 <- map_dfr(jhu4_5_6_vars, function(var) {
+  topic <- meta_jhu4_5_6 |> filter(var == !!var) |> pull(topic)
+
+  non_substantive <- c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+
+  # Prepare data for chi-square
+  temp_data_all <- data |>
+    filter(
+      !is.na(get(var)),
+      !get(var) %in% non_substantive,
+      !is.na(party_switch_analysis)
+    ) |>
+    mutate(.var = droplevels(factor(get(var))))
+
+  temp_design_all <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data_all)
+
+  # Attempt chi-square test
+  chi_result <- tryCatch({
+    svychisq(~.var + party_switch_analysis, design = temp_design_all)
+  }, error = function(e) NULL)
+
+  chi_stat <- if (!is.null(chi_result)) round(chi_result$statistic, 1) else NA
+  p_val    <- if (!is.null(chi_result)) chi_result$p.value else NA
+  sig      <- if (!is.na(p_val) && p_val < 0.05) "*" else ""
+
+  # Topic header with asterisk if significant
+  header_row <- tibble(
+    Response = paste0(topic, sig),
+    `Democrat, Percent (SE)` = "",
+    `Republican, Percent (SE)` = "",
+    `New Democrat, Percent (SE)` = "",
+    `New Republican, Percent (SE)` = ""
+  )
+
+  # Get response categories
+  responses <- levels(droplevels(factor(data[[var]])))
+  responses <- responses[!responses %in% non_substantive]
+
+  # Response-level rows
+  category_rows <- map_dfr(responses, function(response) {
+    temp_data <- data |> 
+      filter(!is.na(get(var)), !is.na(party_switch_analysis)) |> 
+      mutate(temp = ifelse(as.character(get(var)) == response, 1, 0))
+
+    temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+    prop_result <- svyby(
+      ~temp,
+      ~party_switch_analysis,
+      design = temp_design,
+      svymean,
+      na.rm = TRUE,
+      drop.empty.groups = FALSE
+    )
+
+    prop_df <- tibble(
+      group = prop_result$party_switch_analysis,
+      pct = 100 * as.numeric(prop_result$temp),
+      se = 100 * as.numeric(SE(prop_result))
+    ) |>
+      right_join(tibble(group = party_levels), by = "group") |>
+      mutate(
+        pct = ifelse(is.na(pct), 0, pct),
+        se = ifelse(is.na(se), 0, se),
+        formatted = sprintf("%.1f (%.1f)", pct, se)
+      )
+
+    tibble(
+      Response = response,
+      `Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "Democrat"],
+      `Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "Republican"],
+      `New Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "New Democrat"],
+      `New Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "New Republican"]
+    )
+  })
+
+  # Chi-squared summary row
+  summary_row <- tibble(
+    Response = if (!is.na(p_val)) {
+      sprintf("X² = %.1f, p = %.3f%s", chi_stat, p_val, sig)
+    } else {
+      "Test skipped due to low cell counts"
+    },
+    `Democrat, Percent (SE)` = "",
+    `Republican, Percent (SE)` = "",
+    `New Democrat, Percent (SE)` = "",
+    `New Republican, Percent (SE)` = ""
+  )
+
+  bind_rows(header_row, category_rows, summary_row)
+})
+
+table_jhu4_5_6 |> kable()
+```
+
+An asterisk on the variable label indicates a statistically significant difference in response distributions across party groups (p < 0.05), based on a Rao–Scott chi-squared test of association.
+The reported X² statistic and p-value are survey-adjusted using the svychisq() function from the R survey package.*
+
+
+
+## JHU 7
+
+Question:
+
+"Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3. [topic]"
+
+```{r table_9, echo=FALSE, message=FALSE, warning=FALSE}
+# Block of variables
+jhu7_vars <- paste0("JHU7_", 1:12)
+
+# Filter meta for this block
+meta_jhu7 <- meta |> filter(var %in% jhu7_vars)
+
+# Party categories to loop across
+party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+
+# Build table
+table_jhu7 <- map_dfr(jhu7_vars, function(var) {
+  topic <- meta_jhu7 |> filter(var == !!var) |> pull(topic)
+
+  non_substantive <- c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+
+  # Prepare data for chi-square
+  temp_data_all <- data |>
+    filter(
+      !is.na(get(var)),
+      !get(var) %in% non_substantive,
+      !is.na(party_switch_analysis)
+    ) |>
+    mutate(.var = droplevels(factor(get(var))))
+
+  temp_design_all <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data_all)
+
+  # Attempt chi-square test
+  chi_result <- tryCatch({
+    svychisq(~.var + party_switch_analysis, design = temp_design_all)
+  }, error = function(e) NULL)
+
+  chi_stat <- if (!is.null(chi_result)) round(chi_result$statistic, 1) else NA
+  p_val    <- if (!is.null(chi_result)) chi_result$p.value else NA
+  sig      <- if (!is.na(p_val) && p_val < 0.05) "*" else ""
+
+  # Topic header with asterisk if significant
+  header_row <- tibble(
+    Response = paste0(topic, sig),
+    `Democrat, Percent (SE)` = "",
+    `Republican, Percent (SE)` = "",
+    `New Democrat, Percent (SE)` = "",
+    `New Republican, Percent (SE)` = ""
+  )
+
+  # Get response categories
+  responses <- c("Yes", "No")
+
+  # Response-level rows
+  category_rows <- map_dfr(responses, function(response) {
+    temp_data <- data |> 
+      filter(!is.na(get(var)), !is.na(party_switch_analysis)) |> 
+      mutate(temp = ifelse(as.character(get(var)) == response, 1, 0))
+
+    temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+    prop_result <- svyby(
+      ~temp,
+      ~party_switch_analysis,
+      design = temp_design,
+      svymean,
+      na.rm = TRUE,
+      drop.empty.groups = FALSE
+    )
+
+    prop_df <- tibble(
+      group = prop_result$party_switch_analysis,
+      pct = 100 * as.numeric(prop_result$temp),
+      se = 100 * as.numeric(SE(prop_result))
+    ) |>
+      right_join(tibble(group = party_levels), by = "group") |>
+      mutate(
+        pct = ifelse(is.na(pct), 0, pct),
+        se = ifelse(is.na(se), 0, se),
+        formatted = sprintf("%.1f (%.1f)", pct, se)
+      )
+
+    tibble(
+      Response = response,
+      `Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "Democrat"],
+      `Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "Republican"],
+      `New Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "New Democrat"],
+      `New Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "New Republican"]
+    )
+  })
+
+  # Chi-squared summary row
+  summary_row <- tibble(
+    Response = if (!is.na(p_val)) {
+      sprintf("X² = %.1f, p = %.3f%s", chi_stat, p_val, sig)
+    } else {
+      "X² Test skipped due to low cell counts"
+    },
+    `Democrat, Percent (SE)` = "",
+    `Republican, Percent (SE)` = "",
+    `New Democrat, Percent (SE)` = "",
+    `New Republican, Percent (SE)` = ""
+  )
+
+  bind_rows(header_row, category_rows, summary_row)
+})
+
+table_jhu7 |> kable()
+```
+
+An asterisk on the variable label indicates a statistically significant difference in response distributions across party groups (p < 0.05), based on a Rao–Scott chi-squared test of association.
+The reported X² statistic and p-value are survey-adjusted using the svychisq() function from the R survey package.*
+

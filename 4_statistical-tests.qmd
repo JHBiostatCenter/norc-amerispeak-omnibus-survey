@@ -1,0 +1,1246 @@
+---
+title: "Statistical Analysis of Party Differences in Health Survey Responses"
+author: "Erik Westlund"
+date: "2025-02-28"
+date-modified: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format: 
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 6
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
+    html-math-method: katex
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 10
+)
+
+# Load all required packages and source utility files
+source("project-setup.R")
+# Load analysis data and create survey design
+load_analysis_data()
+
+# Ensure recoded variables exist
+if (!all(paste0(meta$var, "_recoded") %in% names(data))) {
+  stop("Recoded variables are missing. Please run 1_norc-data-tabulation.qmd first.")
+}
+
+```
+
+
+
+```{r survey_processing, echo=FALSE}
+process_survey_questions <- function(
+  svy_design,
+  questions,
+  grouping_var,
+  non_responses = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+  pairwise_comparisons = list(
+    c("Democrat", "Republican"),
+    c("New Republican", "Democrat"),
+    c("New Democrat", "Democrat"),
+    c("New Republican", "Republican"),
+    c("New Democrat", "Republican")
+  )
+) {
+    results_list <- list()
+    non_response_list <- list()
+    chi_square_results <- list()
+    pairwise_results <- list()
+    
+    for (i in 1:nrow(questions)) {
+      survey_item <- questions[i, ] |> pull(var)
+      
+      # Count non-responses
+      non_response_count <- svytable(as.formula(paste0("~", survey_item)), svy_design) %>%
+        as.data.frame() %>%
+        filter(!!sym(survey_item) %in% non_responses) %>%
+        summarise(non_response = sum(Freq)) %>%
+        mutate(question = survey_item)
+      
+      non_response_list[[survey_item]] <- non_response_count
+      
+      # Subset out non-responses
+      svy_filtered <- subset(svy_design, !get(survey_item) %in% non_responses)
+      
+      # Identify the most extreme category based on common phrasing
+      extreme_category <- case_when(
+        any(svy_filtered$variables[[survey_item]] %in% "Very/Extremely important") ~ "Very/Extremely important",
+        any(svy_filtered$variables[[survey_item]] %in% "Support/Strongly support") ~ "Support/Strongly support",
+        any(svy_filtered$variables[[survey_item]] %in% "Oppose/Strongly oppose") ~ "Oppose/Strongly oppose",
+        any(svy_filtered$variables[[survey_item]] %in% "Yes") ~ "Yes",
+        TRUE ~ NA_character_
+      )
+
+      # Skip if no extreme category is found
+      if (is.na(extreme_category)) next
+      
+      # Define reference category
+      reference_category <- "Other"
+
+      # Recode responses (keep extreme label, group others as "Other")
+      svy_filtered$variables[[survey_item]] <- ifelse(
+        svy_filtered$variables[[survey_item]] == extreme_category,
+        extreme_category, reference_category
+      ) |> factor(levels = c(reference_category, extreme_category))  # Keep original extreme label
+
+      # Rao-Scott Chi-Square Test
+      chi_test <- tryCatch(
+        {
+          svychisq(as.formula(paste0("~", survey_item, " + ", grouping_var)), 
+                   svy_filtered, 
+                   statistic = "adjWald")
+        },
+        error = function(e) {
+          return(NULL)
+        }
+      )
+      
+      if (!is.null(chi_test)) {
+        chi_square_results[[survey_item]] <- data.frame(
+          question = survey_item,
+          topic = questions$topic[i],
+          chi_sq = chi_test$statistic,
+          ndf = chi_test$parameter[1],  
+          ddf = chi_test$parameter[2],  
+          p_value = chi_test$p.value,
+          p_sig = chi_test$p.value < 0.05  
+        )
+      }
+
+      # Pairwise Comparisons using Binary Logistic Regression
+      for (pair in pairwise_comparisons) {
+        tryCatch({
+          # Subset the survey design object
+          subset_data <- subset(svy_filtered, get(grouping_var) %in% pair)
+          
+          # Convert to a dataframe to modify factor levels
+          subset_df <- subset_data$variables
+          
+          # Determine the reference category dynamically
+          reference_category <- if (all(c("Democrat", "Republican") %in% pair)) {
+            "Republican"  # If both are present, use "Republican"
+          } else if ("Democrat" %in% pair) {
+            "Democrat"  # If only Democrat is present, use "Democrat"
+          } else {
+            "Republican"  # Default to Republican
+          }
+          
+          # Ensure the variable is a factor with the correct reference category
+          subset_df[[grouping_var]] <- relevel(factor(subset_df[[grouping_var]]), ref = reference_category)
+          
+          # Recreate the survey design object with the modified dataframe
+          subset_data <- svydesign(ids = ~1, data = subset_df, weights = subset_data$prob)
+          
+          # Fit weighted binary logistic regression
+          model <- svyglm(as.formula(paste0(survey_item, " ~ ", grouping_var)), 
+                          design = subset_data, 
+                          family = quasibinomial())
+
+          # Extract results for pairwise comparisons
+          summary_model <- tidy(model) %>%
+            mutate(
+              question = survey_item,
+              topic = questions$topic[i],
+              comparison = paste(pair, collapse = " vs. "),
+              comparison_category = paste0(extreme_category, " vs. ", reference_category), # Add explicit category comparison
+              estimate_type = ifelse(term == "(Intercept)", "Intercept", "Coefficient"),  # Label intercepts vs. coefficients
+              or = exp(estimate),  
+              or_lower = exp(estimate - 1.96 * std.error),  
+              or_upper = exp(estimate + 1.96 * std.error),  
+              p_sig = p.value < 0.05  
+            ) %>%
+            select(question, topic, comparison, comparison_category, estimate_type, estimate, std.error,  
+                   p.value, p_sig, or, or_lower, or_upper)
+          
+          pairwise_results[[paste(survey_item, pair[1], pair[2], sep = "_")]] <- summary_model
+          
+        }, error = function(e) {})
+      }
+    }
+    
+    # Convert all results to data frames
+    chi_square_df <- bind_rows(chi_square_results)
+    pairwise_df <- bind_rows(pairwise_results)
+
+    # Apply multiple comparison corrections
+    if (nrow(pairwise_df) > 0) {
+      pairwise_df <- pairwise_df %>%
+        mutate(
+          p_bonferroni = p.adjust(p.value, method = "bonferroni"),
+          p_holm = p.adjust(p.value, method = "holm"),
+          p_fdr = p.adjust(p.value, method = "fdr"),
+          p_bonferroni_sig = p_bonferroni < 0.05,
+          p_holm_sig = p_holm < 0.05,
+          p_fdr_sig = p_fdr < 0.05
+        )
+    }
+    
+    return(list(
+      chi_square_results = chi_square_df, 
+      pairwise_results = pairwise_df
+    ))
+}
+
+```
+
+
+```{r present_results, echo=FALSE}
+present_results <- function(results) {
+  
+  # Format Chi-Square Results
+  chi_square_table <- results$chi_square_results |> 
+    mutate(
+      question = str_remove(question, "_recoded$"),
+      p_value = round(p_value, 3),
+      chi_sq = round(chi_sq, 2),
+      ndf = as.integer(ndf),
+      ddf = as.integer(ddf),
+      p_sig = ifelse(p_value < 0.05, "Yes", "No"),
+      `P-Value` = as.character(p_value),
+    ) |> 
+    select(
+      Question = question, 
+      Topic = topic, 
+      `Chi-Square` = chi_sq, 
+      `Numerator df` = ndf, 
+      `Denominator df` = ddf, 
+      `P-Value`, 
+      `Significant` = p_sig
+    ) 
+  
+  rownames(chi_square_table) <- NULL
+  
+  chi_square_table_formatted <- chi_square_table |> 
+    knitr::kable(caption = "Chi-Square Test Results for JHU1 Questions", escape = FALSE, format = "html", row.names = FALSE) |> 
+    kable_styling(full_width = FALSE)
+
+  # Format Pairwise Comparison Results
+  pairwise_table <- results$pairwise_results |> 
+    filter(estimate_type == "Coefficient") |> 
+    mutate(
+      question = str_remove(question, "_recoded$"),  
+      estimate = round(estimate, 2),
+      std.error = round(std.error, 2),
+      p_value = round(p.value, 3),
+      p_bonferroni = round(p_bonferroni, 3),
+      or = round(exp(estimate), 2),  # Exponentiate OR
+      or_lower = format(round(or_lower, 2), nsmall = 2),
+      or_upper = format(round(or_upper, 2), nsmall = 2),
+      p_sig = ifelse(p_sig, "Yes", "No"),  
+      
+      
+      # Apply color coding to Comparison Category
+      # comparison = case_when(
+      #   comparison == "Democrat vs. Republican" ~ 
+      #     cell_spec(comparison, color = "blue"),
+      #   comparison == "Democrat vs. New Republican" ~ 
+      #     cell_spec(comparison, color = "green"),
+      #   comparison == "Democrat vs. New Democrat" ~ 
+      #     cell_spec(comparison, color = "red"),
+      #   comparison == "Republican vs. New Republican" ~ 
+      #     cell_spec(comparison, color = "purple"),
+      #   comparison == "Republican vs. New Democrat" ~ 
+      #     cell_spec(comparison, color = "orange"),
+      #   TRUE ~ comparison
+      # ),
+      # 
+      # Convert TRUE/FALSE to Yes/No and bold significant values
+      `Bonferroni Adjusted Significant?` = ifelse(
+        p_bonferroni_sig, 
+        "Yes", 
+        # cell_spec("Yes", bold = TRUE), 
+        "No"
+      ),
+      `Holm Adjusted Significant?` = ifelse(
+        p_holm_sig, 
+        "Yes", 
+        # cell_spec("Yes", bold = TRUE), 
+        "No"
+      ),
+      `FDR Adjusted Significant?` = ifelse(
+        p_fdr_sig, 
+        "Yes", 
+        # cell_spec("Yes", bold = TRUE), 
+        "No"
+      )
+    ) |> 
+    select(
+      Question = question, 
+      Topic = topic, 
+      `Comparison` = comparison, 
+      `Comparison Category` = comparison_category,
+      `Estimate (Log-OR)` = estimate, 
+      `Std. Error` = std.error, 
+      `P-Value` = p_value, 
+      `P-Value (Bonferroni)` = p_bonferroni,
+      `P-Value (Holm)` = p_holm,
+      `P-Value (FDR)` = p_fdr,
+      `Significant?` = p_sig, 
+      `Odds Ratio (OR)` = or, 
+      `OR Lower Bound` = or_lower, 
+      `OR Upper Bound` = or_upper, 
+      `Bonferroni Adjusted Significant?`, 
+      `Holm Adjusted Significant?`, 
+      `FDR Adjusted Significant?`
+    ) 
+  
+  pairwise_table_formatted <- pairwise_table |> 
+    knitr::kable(caption = "Pairwise Comparisons for JHU1 Questions", escape = FALSE, format = "html", row.names = FALSE) |> 
+    kable_styling(full_width = FALSE)
+
+  # Return tables
+  return(
+    list(
+      chi2 = chi_square_table,
+      chi2_formatted = chi_square_table_formatted,
+      pw = pairwise_table,
+      pw_formatted = pairwise_table_formatted
+    )
+  )
+}
+
+
+process_q_block <- function(block_prefix, meta, svy_design, grouping_var = "party_switch_analysis") {
+ # Extract question stem
+  q_stem <- meta |> 
+    filter(stringr::str_starts(var, block_prefix)) |> 
+    select(question) |> 
+    first() |> 
+    mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |> 
+             stringr::str_remove("\\s*\\[$")) |> 
+    pull(stem) |> 
+    unique()
+  
+  # Select questions and filter
+  questions <- meta |> 
+    filter(stringr::str_starts(var, block_prefix)) |> 
+    select(var, topic) |> 
+    mutate(var = paste0(var, "_recoded")) |> 
+    filter(!is.na(topic)) |> 
+    filter(!stringr::str_starts(topic, "Other")) |> 
+    mutate(stem = q_stem)
+
+  # Process survey questions
+  ests <- process_survey_questions(svy_design, questions, grouping_var)
+  
+  # Present results
+  r <- ests |> present_results()
+  
+  # Ensure chi2 and pw are data frames before mutating
+  chi2_df <- if (inherits(r$chi2, "data.frame")) r$chi2 |> mutate(block = block_prefix) else tibble()
+  chi2_df <- chi2_df |> 
+    mutate(Stem = q_stem)
+  pw_df <- if (inherits(r$pw, "data.frame")) r$pw |> mutate(block = block_prefix) else tibble() 
+  pw_df <- pw_df |> 
+    mutate(Stem = q_stem)
+
+  chi2_formatted <- r$chi2_formatted
+  pw_formatted <- r$pw_formattedformatted
+  
+  # Return results
+  list(
+    block = block_prefix,
+    question_stem = q_stem,
+    chi2 = chi2_df,
+    chi2_formatted = chi2_formatted,
+    pw = pw_df,
+    pw_formatted = pw_formatted
+  )
+}
+```
+## Methods
+
+### Chi-Square Tests
+
+The Chi-square tests are used to determine if there is a significant association between two categorical variables. Here, they are likely not that informative. A statistically significant result tells us there are differences in response given party status (Democrat, Republica, New Democrat, New Republican) and the question asked.
+
+These tests use the `svychisq` function from the `survey` package to conduct chi-square tests. The function calculates the Rao-Scott chi-square statistic, which is an adjusted version of the Pearson chi-square test used for complex survey designs. This is appropriate for us because we have weights.
+
+We report the design-adjusted Wald test statistic (in the package, setting `statistic="adjWald"`), a robust alternative to the standard chi-square test. This adjustment accounts for survey design effects.
+
+### Weighted Bivariate Logistic Regression
+
+Comparing survey response questions by party identification/switch status is our primary goal. There are several complications:
+
+* We have to account for survey weights.
+* We have to choose which response categories to compare; most of these items were measured with five levels. Even categorizing down to three levels, it is still difficult to process all those comparisons.
+* We likewise have multiple sub-groups (R, D, New R, New D) to compare.
+* Doing multiple pairwise comparisons requires multiple testing corrections.
+
+I have opted for the following approach:
+
+1. Compare the most affirmative responses to the rest. E.g., Strongly Agree/Agree vs. Other.   This allows us a 1/0 response variable.  We can change the binning if we want.
+2. Examine five comparisons:
+   - Democrat vs. Republican
+   - Democrat vs. New Democrat
+   - Democrat vs. New Republican
+   - Republican vs. New Democrat
+   - Republican vs. New Republican
+3. Correct for multiple testing using Bonferroni, Holm, and FDR methods. Some of these methods are more conservative than others.  I reported all of them. We should choose one method to report.
+4. Subset the data to the groups we care about.
+5. Run a survey-weighted logistic regression for each comparison. We are using the `svyglm` function from the `survey` package. 
+
+Possible alternatives to this include using multinomial logistic regression to compare, for example, Strongly Agree/Agree vs. Somehwat Agree and Strongly Agree/Agree vs. Disagree. This adds a lot of interpretive burden without much gain IMO.
+
+### Multiple Testing Corrections
+
+We applied three different methods for multiple testing corrections:
+- Bonferroni correction
+- Holm's method
+- False Discovery Rate (FDR)
+
+Each method has different levels of conservativeness in controlling for Type I errors.
+
+### Interpreting Results
+
+If there is a positive log-odds ratio (or odds ratio > 1), the first group is more likely to respond affirmatively to the question than the second group. For example:
+
+If the odds ratio for "Democrat vs. Republican" comparison on the question "We're interested in what you think are important health issues facing the nation. Please assess how important each of the following is: [Life Expectancy]" is 0.61, then the odds of democrats responding affirmatively to the question are 0.61 times the odds of republicans responding affirmatively.
+
+## Results Overview
+
+The four party groups here are: Democrat, Republican, New Democrat, New Republican.
+
+```{r combine_analyses, echo=FALSE, warning=FALSE, message=FALSE}
+# Define all JHU blocks
+blocks <- paste0("JHU", 1:7)
+
+# Process all blocks and collect results
+results_list <- purrr::map(blocks, process_q_block, meta = meta, svy_design = svy_design)
+
+# Combine chi2 and pairwise results into one table each
+chi2_results <- results_list |> purrr::map_dfr("chi2")
+pw_results <- results_list |> purrr::map_dfr("pw")
+```
+
+```{r chi2_results, echo=FALSE, warning=FALSE, message=FALSE}
+diff <- chi2_results |> 
+  filter(Significant == "Yes") |> 
+  select(Stem, Topic)
+
+no_diff <- chi2_results |> 
+  filter(Significant == "No") |> 
+  select(Stem, Topic)
+```
+
+### Significant Differences by Topic
+
+The below topics are where we see statistically significant disagreement among the party groups. 
+
+```{r diff, echo=FALSE}
+diff |> select(Topic) |> unique() |> kable(caption = "Questions with statistically significant disagreement among party groups")
+```
+
+### No Significant Differences by Topic
+
+The below topics are where we see *no* statistically significant disagreement among the party groups. 
+
+```{r no_diff, echo=FALSE}
+no_diff |> select(Topic) |> unique() |> kable(caption = "Questions with no statistically significant disagreement among party groups")
+```
+
+### Pairwise Comparisons
+
+We tested the following comparisons:
+
+* Democrat vs. Republican
+* New Republican vs. Democrat
+* New Democrat vs. Democrat
+* New Republican vs. Republican
+* New Democrat vs. Republican
+
+We did this by filtering on those groups and running a weighted logistic regression. We then corrected for multiple testing using no correction for multiple comparisons, Bonferroni, Holm, and FDR methods. 
+
+For each comparison, we present results using different multiple testing correction methods:
+
+#### Democrat vs. Republican
+
+::: {.panel-tabset}
+
+##### Bonferroni
+
+```{r echo=FALSE, results='asis'}
+# Filter results for Democrat vs. Republican
+results <- pw_results |> filter(Comparison == "Democrat vs. Republican")
+
+# Show Bonferroni results
+sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Bonferroni)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### Holm
+
+```{r echo=FALSE, results='asis'}
+# Show Holm results
+sig_results <- results |> filter(`Holm Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Holm)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### FDR
+
+```{r echo=FALSE, results='asis'}
+# Show FDR results
+sig_results <- results |> filter(`FDR Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (FDR)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### No Correction
+
+```{r echo=FALSE, results='asis'}
+# Show uncorrected results
+sig_results <- results |> filter(`Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+:::
+
+#### New Republican vs. Democrat
+
+::: {.panel-tabset}
+
+##### Bonferroni
+
+```{r echo=FALSE, results='asis'}
+# Filter results for New Republican vs. Democrat
+results <- pw_results |> filter(Comparison == "New Republican vs. Democrat")
+
+# Show Bonferroni results
+sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Bonferroni)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### Holm
+
+```{r echo=FALSE, results='asis'}
+# Show Holm results
+sig_results <- results |> filter(`Holm Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Holm)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### FDR
+
+```{r echo=FALSE, results='asis'}
+# Show FDR results
+sig_results <- results |> filter(`FDR Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (FDR)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### No Correction
+
+```{r echo=FALSE, results='asis'}
+# Show uncorrected results
+sig_results <- results |> filter(`Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+:::
+
+#### New Democrat vs. Democrat
+
+::: {.panel-tabset}
+
+##### Bonferroni
+
+```{r echo=FALSE, results='asis'}
+# Filter results for New Democrat vs. Democrat
+results <- pw_results |> filter(Comparison == "New Democrat vs. Democrat")
+
+# Show Bonferroni results
+sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Bonferroni)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### Holm
+
+```{r echo=FALSE, results='asis'}
+# Show Holm results
+sig_results <- results |> filter(`Holm Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Holm)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### FDR
+
+```{r echo=FALSE, results='asis'}
+# Show FDR results
+sig_results <- results |> filter(`FDR Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (FDR)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### No Correction
+
+```{r echo=FALSE, results='asis'}
+# Show uncorrected results
+sig_results <- results |> filter(`Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+:::
+
+#### New Republican vs. Republican
+
+::: {.panel-tabset}
+
+##### Bonferroni
+
+```{r echo=FALSE, results='asis'}
+# Filter results for New Republican vs. Republican
+results <- pw_results |> filter(Comparison == "New Republican vs. Republican")
+
+# Show Bonferroni results
+sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Bonferroni)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### Holm
+
+```{r echo=FALSE, results='asis'}
+# Show Holm results
+sig_results <- results |> filter(`Holm Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Holm)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### FDR
+
+```{r echo=FALSE, results='asis'}
+# Show FDR results
+sig_results <- results |> filter(`FDR Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (FDR)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### No Correction
+
+```{r echo=FALSE, results='asis'}
+# Show uncorrected results
+sig_results <- results |> filter(`Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+:::
+
+#### New Democrat vs. Republican
+
+::: {.panel-tabset}
+
+##### Bonferroni
+
+```{r echo=FALSE, results='asis'}
+# Filter results for New Democrat vs. Republican
+results <- pw_results |> filter(Comparison == "New Democrat vs. Republican")
+
+# Show Bonferroni results
+sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Bonferroni)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### Holm
+
+```{r echo=FALSE, results='asis'}
+# Show Holm results
+sig_results <- results |> filter(`Holm Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (Holm)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### FDR
+
+```{r echo=FALSE, results='asis'}
+# Show FDR results
+sig_results <- results |> filter(`FDR Adjusted Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value (FDR)`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+##### No Correction
+
+```{r echo=FALSE, results='asis'}
+# Show uncorrected results
+sig_results <- results |> filter(`Significant?` == "Yes")
+if (nrow(sig_results) > 0) {
+  sig_results |> 
+    mutate(
+      `Corrected P-Value` = `P-Value`
+    ) |>
+    select(
+      Question, 
+      Topic, 
+      `Estimate (Log-OR)`, 
+      `Odds Ratio (OR)`, 
+      `Raw P-Value` = `P-Value`,
+      `Corrected P-Value`
+    ) |> 
+    knitr::kable(format = "markdown")
+} else {
+  cat("_No significant results_\n")
+}
+```
+
+:::
+
+## Question Block Results
+
+### JHU1: Important Health Issues Facing the Nation
+
+```{r jhu1_plot, echo=FALSE, warning=FALSE, message=FALSE}
+jhu1_q_stem <- meta |> filter(stringr::str_starts(var, "JHU1")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_trim(stringr::str_extract(question, "^(.*?):\\s"))) |>
+  pull(stem) |>
+  unique()
+
+jhu1_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU1")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu1_qs
+
+jhu1_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu1_ests$results
+ests <- jhu1_ests
+question_stem <- jhu1_q_stem
+
+r <- jhu1_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+```
+
+### JHU2: Additional Health Issues
+
+```{r jhu2_plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+jhu2_q_stem <- meta |> filter(stringr::str_starts(var, "JHU2")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_trim(stringr::str_extract(question, "^(.*?):\\s"))) |>
+  pull(stem) |>
+  unique()
+
+jhu2_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU2")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu2_qs
+jhu2_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu2_ests$results
+ests <- jhu2_ests
+question_stem <- jhu2_q_stem
+
+r <- jhu2_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+```
+
+
+### JHU3: More Health Issues
+
+```{r jhu3_plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+jhu3_q_stem <- meta |> filter(stringr::str_starts(var, "JHU3")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_trim(stringr::str_extract(question, "^(.*?):\\s"))) |>
+  pull(stem) |>
+  unique()
+
+jhu3_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU3")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu3_qs
+jhu3_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu3_ests$results
+ests <- jhu3_ests
+question_stem <- jhu3_q_stem
+
+r <- jhu3_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+```
+
+
+### JHU4: Policy Goals - Part 1
+
+```{r jhu4_plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+jhu4_q_stem <- meta |>
+  filter(stringr::str_starts(var, "JHU4")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |>
+  stringr::str_remove("\\s*\\[$")) |>
+  pull(stem) |>
+  unique()
+
+jhu4_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU4")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu4_qs
+jhu4_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu4_ests$results
+ests <- jhu4_ests
+question_stem <- jhu4_q_stem
+
+r <- jhu4_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+```
+
+
+### JHU5: Policy Goals - Part 2
+
+```{r jhu5_plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+jhu5_q_stem <- meta |>
+  filter(stringr::str_starts(var, "JHU5")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |>
+  stringr::str_remove("\\s*\\[$")) |>
+  pull(stem) |>
+  unique()
+
+jhu5_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU5")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu5_qs
+jhu5_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu5_ests$results
+ests <- jhu5_ests
+question_stem <- jhu5_q_stem
+
+r <- jhu5_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+
+
+```
+
+
+### JHU6: Policy Goals - Part 3
+
+```{r jhu6_plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+jhu6_q_stem <- meta |>
+  filter(stringr::str_starts(var, "JHU6")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |>
+  stringr::str_remove("\\s*\\[$")) |>
+  pull(stem) |>
+  unique()
+
+jhu6_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU6")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu6_qs
+jhu6_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu6_ests$results
+ests <- jhu6_ests
+question_stem <- jhu6_q_stem
+
+r <- jhu6_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+```
+
+
+### JHU7: 2024 Presidential Election Issues
+
+```{r jhu7_plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+jhu7_q_stem <- meta |>
+  filter(stringr::str_starts(var, "JHU7")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |>
+  stringr::str_remove("\\s*\\[$")) |>
+  pull(stem) |>
+  unique()
+
+jhu7_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU7")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded")) |>
+  filter(!is.na(topic)) |>
+  filter(!stringr::str_starts(topic, "Other"))
+
+grouping_var <- "party_switch_analysis"
+
+questions <- jhu7_qs
+jhu7_ests <- process_survey_questions(svy_design, questions, "party_switch_analysis")
+
+data <- jhu7_ests$results
+ests <- jhu7_ests
+question_stem <- jhu7_q_stem
+
+r <- jhu7_ests |>
+  present_results()
+
+r$chi2_formatted
+r$pw_formatted
+
+```

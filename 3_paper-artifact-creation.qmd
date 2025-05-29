@@ -1,0 +1,589 @@
+---
+title: "NORC AmeriSpeak Omnibus: Question Summary & Visualization"
+author: "Erik Westlund"
+date: "2025-03-28"
+date-modified: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format: 
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 5
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 10
+)
+
+# Load all required packages and source utility files
+source("project-setup.R")
+
+load_analysis_data()
+
+# Ensure recoded variables exist
+if (!all(paste0(meta$var, "_recoded") %in% names(data))) {
+  stop("Recoded variables are missing. Please run 1_norc-data-tabulation.qmd first.")
+}
+```
+
+## Overview
+
+This document generates visualizations and summaries of key survey questions from the NORC AmeriSpeak Omnibus. The analysis focuses on:
+
+- Top issues in the 2024 presidential election
+- Policy positions and voting patterns
+- Demographic breakdowns of voter preferences
+
+## Data Processing Functions
+
+```{r functions}
+# Function to process survey questions and calculate weighted statistics
+process_survey_questions <- function(
+  svy_design,
+  questions,
+  grouping_var,
+  non_responses = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+) {
+    results_list <- list()
+    non_response_list <- list()
+    
+    for (i in 1:nrow(questions)) {
+      survey_item <- questions[i, ] |> pull(var)
+      
+      non_response_count <-
+        svytable(as.formula(paste0("~", survey_item)), svy_design) |>
+        as.data.frame() |>
+        filter(!!sym(survey_item) %in% non_responses) |>
+        summarise(non_response = sum(Freq)) |>
+        mutate(question = survey_item)
+      
+      non_response_list[[survey_item]] <- non_response_count
+      
+      svy_filtered <-
+        subset(svy_design,!get(survey_item) %in% non_responses)
+      
+      tab <- svyby(
+        as.formula(paste0("~", survey_item)),
+        as.formula(paste0("~", grouping_var)),
+        svytotal,
+        design = svy_filtered,
+        deff = FALSE
+      ) |>
+        as.data.frame()
+      
+      base_question <- survey_item
+      response_cols <- grep(base_question, names(tab), value = TRUE)
+      
+      long_tab <- tab |>
+        pivot_longer(
+          cols = all_of(response_cols),
+          names_to = c("type", "response"),
+          names_pattern = "^(se\\.)?(.*)$",
+          values_to = "value"
+        ) |>
+        mutate(
+          type = ifelse(type == "se.", "se", "total"),
+          response = str_remove(response, paste0("^", base_question)),
+          question = survey_item # Add the question as a column
+        ) |>
+        pivot_wider(names_from = "type",
+                    values_from = "value")
+      
+      result <- long_tab |>
+        inner_join(questions |> select(var, topic), by = c("question" = "var")) |>
+        group_by(question, party_switch_analysis) |> # Group by both question and party
+        mutate(
+          party = party_switch_analysis,
+          percent = total / sum(total) * 100,
+          lower_bound = total - 1.96 * se,
+          upper_bound = total + 1.96 * se,
+          lower_bound_percent = (total - 1.96 * se) / sum(total) * 100,
+          upper_bound_percent = (total + 1.96 * se) / sum(total) * 100,
+          lower_bound_percent = ifelse(lower_bound_percent < 0, 0, lower_bound_percent),
+          upper_bound_percent = ifelse(upper_bound_percent > 100, 100, upper_bound_percent)
+        ) |>
+        ungroup() |>
+        select(
+          topic,
+          party,
+          response,
+          total,
+          se,
+          percent,
+          lower_bound,
+          upper_bound,
+          lower_bound_percent,
+          upper_bound_percent
+        ) 
+      
+            
+      result <- result |>
+        group_by(topic) |> 
+        mutate(
+          response = factor(response, 
+            levels = if (all(c("Not important", "A little/Somewhat important", "Very/Extremely important") %in% response)) {
+              c("Not important", "A little/Somewhat important", "Very/Extremely important")
+            } else if (all(c("Oppose/Strongly oppose", "Neither support nor oppose", "Support/Strongly support") %in% response)) {
+              c("Oppose/Strongly oppose", "Neither support nor oppose", "Support/Strongly support")
+            } else if (all(c("No", "Yes") %in% response)) {
+              c("No", "Yes")
+            } else {
+              unique(response)  # Preserve original order if no match
+            },
+            ordered = TRUE
+          )
+        ) |>
+        ungroup()
+        
+      
+      results_list[[i]] <- result
+    }
+    
+    # Combine all results into single data frames
+    final_results <-
+      bind_rows(results_list, .id = "question") # Adds `question` as an ID column
+    non_response_counts <- bind_rows(non_response_list)
+    
+    return(list(results = final_results, non_response_counts = non_response_counts))
+  }
+
+
+create_forest_plot <- function(ests, question_stem) {
+  item_data <- ests$results
+  
+  # Ensure correct factor ordering
+  filtered_data <- item_data |>
+    mutate(party = factor(
+      party,
+      levels = c("New Democrat", "Democrat", "New Republican", "Republican"),
+      labels = c("New Democrat", "Democrat", "New Republican", "Republican")  # Rename "New Republican" to "New Republican"
+    ))
+  
+filtered_data <- filtered_data |>
+  filter(response %in% c("Very/Extremely important", 
+                         "Support/Strongly support", 
+                         "Yes"))
+
+  # Create topic separator rows with BOLD formatting in markdown
+  topic_separators <- filtered_data |>
+    distinct(topic, response) |>
+    mutate(
+    party = paste0("**", 
+        str_replace_all(str_wrap(topic, width = 50), "\n", "<br>"), 
+        ifelse(nchar(topic) > 100, "<br><br>", ifelse(nchar(topic) > 50, "<br>", "")), 
+        "**"),      # response = "Very Important",
+      percent = NA,
+      lower_bound_percent = NA,
+      upper_bound_percent = NA
+    )
+  
+  # Combine with the original dataset
+  plot_data <- bind_rows(topic_separators, filtered_data)
+  
+  # Ensure topics appear at the top
+  plot_data$party <- factor(
+    plot_data$party,
+    levels = c(
+      unique(topic_separators$party),
+      "Democrat",
+      "New Democrat",
+      "Republican",
+      "New Republican"
+    ),
+    ordered = TRUE
+  )
+  
+  # Generate the plot
+  ggplot(plot_data, aes(
+      x = percent,
+      y = fct_rev(party),
+      color = party
+    )) +
+    geom_segment(
+      aes(x = 0, xend = percent, y = fct_rev(party), yend = fct_rev(party)),
+      color = "gray70",  # Light gray for subtle effect
+      size = 0.5  # Thin lines for clarity
+    ) +
+    geom_point(data = filter(plot_data,!is.na(percent)), size = 2) +  # Dots for estimates
+    geom_text(
+      data = filter(plot_data, is.na(percent)),
+      aes(label = party),
+      color = "black",
+      size = 5,
+      vjust = 0.5,
+      hjust = 0.5
+    ) +
+    geom_text(
+      aes(label = round(percent, 0)),
+      size = 3,
+      hjust = case_when(
+          plot_data$percent <= 4  ~ -1.2,  # Push far left
+          plot_data$percent <= 8 ~ -1.1,    # Slightly left
+          plot_data$percent <= 12 ~ -0.7,  
+          plot_data$percent <= 20 ~ -0.7,  
+          TRUE ~ -0.7 # Default for values above 20
+      ),
+      # hjust = ifelse(plot_data$percent <= 10,-1,-0.5),
+      vjust = 0.5,
+    ) +
+    facet_grid(topic ~ response, scales = "free_y") +  # Responses as columns, topics stacked
+    scale_x_continuous(
+      limits = c(0, 109),
+      breaks = seq(0, 100, 20),
+      labels = scales::percent_format(scale = 1)
+    ) +
+    scale_color_manual(values = c(
+      "New Democrat" = "gray",
+      "Democrat" = "blue",
+      "New Republican" = "purple",
+      "Republican" = "red"
+    )) +
+    labs(title = str_wrap(question_stem, width = 70),
+         caption= str_wrap("Weighted estimates. Only the most common response category is shown. Democrat/Republican mean respondent voted for these parties in both 2020 and 2024. Percents shown add up to 100% within party/switch status.", 80),
+         x = "Percent (%)",
+         y = NULL) +
+    theme_minimal(base_size = 14) +
+    theme(
+      axis.text.y = element_markdown(size = 12),
+      axis.title.y = element_blank(),
+      legend.position = "none",
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      strip.text.x = element_text(
+        size = 12,
+        face = "bold",
+        hjust = 0,
+        margin = margin(b = 10)
+      ),
+      strip.text.y = element_blank(),
+      panel.spacing.y = unit(1.5, "lines"),
+      panel.spacing.x = unit(3, "lines"),
+      aspect.ratio = 1 / 4,
+      plot.title.position = "plot",
+      plot.title = element_text(
+        size = 12,
+        face = "bold",
+        hjust = 0.5,
+        margin = margin(b = 30)
+      ),
+      plot.caption = element_text(
+        size = 10, 
+        hjust = 1, 
+        margin = margin(t = 20)
+      )
+    )
+  
+}
+```
+
+## Voting Pattern Categories
+
+We analyze voting patterns using the following categories:
+
+- **Democrat**: Voted for Joe Biden then Kamala Harris
+- **Republican**: Voted for Donald Trump twice
+- **New Republican**: Did not vote for Trump in 2020 but voted for Trump in 2024
+  - Includes those who voted for Biden, did not vote, or voted third party in 2020
+  - Excludes those who did not provide 2020 voting information
+
+```{r party_switch_breakdown}
+# Display unique categories
+party_switch_cats <- data |> 
+  pull(party_switch_analysis) |> 
+  strip_nonresponse_of_any_form() |> 
+  unique() |> 
+  sort()
+
+party_switch_cats |> kable()
+```
+
+```{r party_switch}
+# Calculate weighted totals
+svytotal(~party_switch_analysis, na.rm = TRUE, design = svy_design) |> 
+  clean_svytotal("party_switch_analysis") |> 
+  kable()
+```
+
+## Top Issues in 2024 Election
+
+```{r jhu7_bar_chart}
+
+total_respondents <- svytotal(~one, update(svy_design, one = 1))[[1]]
+total_respondents_rounded <- round(total_respondents, 0)
+
+issue_vars <- paste0("JHU7_", 1:13)
+
+issue_data <- raw_data |>
+  select(WEIGHT_EN, all_of(issue_vars)) |>
+  pivot_longer(
+    cols = all_of(issue_vars),
+    names_to = "issue",
+    values_to = "selected"
+  ) |>
+  mutate(selected = ifelse(is.na(selected), 0, selected))
+
+# 3. Create survey design for long data
+svy_issue_data <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = issue_data)
+
+# 4. Compute weighted totals and standard errors
+issue_totals <- svyby(
+  ~selected, 
+  ~issue, 
+  design = svy_issue_data, 
+  svytotal, 
+  vartype = "se"
+) |>
+  rename(total = selected, se = se) |> 
+   mutate(
+    percent = 100 * total / total_respondents,
+    percent_se = 100 * se / total_respondents
+  )
+
+# 5. Add issue labels (optional, more readable axis)
+issue_labels <- c(
+  "JHU7_1" = "Health care",
+  "JHU7_2" = "Foreign policy",
+  "JHU7_3" = "Democracy",
+  "JHU7_4" = "Inflation",
+  "JHU7_5" = "Immigration",
+  "JHU7_6" = "Crime",
+  "JHU7_7" = "Jobs",
+  "JHU7_8" = "Abortion",
+  "JHU7_9" = "Vaccines",
+  "JHU7_10" = "Poverty",
+  "JHU7_11" = "Inequality",
+  "JHU7_12" = "Education",
+  "JHU7_13" = "Other"
+)
+
+issue_totals$label <- factor(issue_labels[issue_totals$issue], levels = issue_labels)
+
+# 6. Plot
+ggplot(issue_totals, aes(x = reorder(label, percent), y = percent)) +
+  theme_jhu() +
+  geom_col(fill = colors$HopkinsBlue) +
+  geom_errorbar(
+    aes(ymin = percent - 1.96 * percent_se, ymax = percent +  1.96 *percent_se),
+    width = 0.2,
+    color = colors$Teal
+  ) +
+  geom_text(aes(label = paste0(round(percent, 0), "%")), hjust = -0.2, vjust = -1, size = 3.5) +
+  coord_flip() +
+  labs(
+    title = "Top Issues in 2024\n Presidential Election",
+    subtitle = "Weighted percentages. Respondents could select up to 3 issues.",
+    x = element_blank(),
+    y = "Percentage of respondents",
+    caption = "=\nError bars represent ±1 SE (standard error)."
+  ) +
+  expand_limits(y = max(issue_totals$percent + issue_totals$percent_se) * 1.1)
+
+ggsave("images/issue_bar_chart.png", width = 8, height = 10, dpi = 300)
+
+
+```
+
+## Policy Position Analysis
+
+### JHU1 Questions
+
+```{r jhu1_plot}
+# Process JHU1 questions
+jhu1_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU1")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_trim(stringr::str_extract(question, "^(.*?):\\s"))) |>
+  pull(stem) |>
+  unique()
+
+jhu1_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU1")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+jhu1_ests <- process_survey_questions(svy_design, jhu1_qs, "party_switch_analysis")
+```
+
+```{r render_jhu1_plot}
+jhu1_plot <- create_forest_plot(jhu1_ests, jhu1_q_stem)
+ggplot2::ggsave("images/jhu1_plot.png", jhu1_plot, width = 8, height = 10, units = "in", dpi = 300)
+jhu1_plot
+```
+
+### JHU2 Questions
+
+```{r jhu2_plot}
+# Process JHU2 questions
+jhu2_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU2")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_trim(stringr::str_extract(question, "^(.*?):\\s"))) |>
+  pull(stem) |>
+  unique()
+
+jhu2_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU2")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+jhu2_ests <- process_survey_questions(svy_design, jhu2_qs, "party_switch_analysis")
+```
+
+```{r render_jhu2_plot}
+jhu2_plot <- create_forest_plot(jhu2_ests, jhu2_q_stem)
+ggplot2::ggsave("images/jhu2_plot.png", jhu2_plot, width = 8, height = 10, units = "in", dpi = 300)
+jhu2_plot
+```
+
+### JHU3 Questions
+
+```{r jhu3_plot}
+# Process JHU3 questions
+jhu3_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU3")) |>
+  select(question) |>
+  first() |>
+  mutate(stem = stringr::str_trim(stringr::str_extract(question, "^(.*?):\\s"))) |>
+  pull(stem) |>
+  unique()
+
+jhu3_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU3")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+jhu3_ests <- process_survey_questions(svy_design, jhu3_qs, "party_switch_analysis")
+```
+
+```{r render_jhu3_plot}
+jhu3_plot <- create_forest_plot(jhu3_ests, jhu3_q_stem)
+ggplot2::ggsave("images/jhu3_plot.png", jhu3_plot, width = 8, height = 10, units = "in", dpi = 300)
+jhu3_plot
+```
+
+### JHU4 Questions
+
+```{r jhu4_plot}
+# Process JHU4 questions
+jhu4_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU4")) |> 
+  select(question) |> 
+  first() |> 
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |> 
+  stringr::str_remove("\\s*\\[$")) |> 
+  pull(stem) |> 
+  unique()
+
+jhu4_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU4")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+jhu4_ests <- process_survey_questions(svy_design, jhu4_qs, "party_switch_analysis")
+```
+
+```{r render_jhu4_plot}
+jhu4_plot <- create_forest_plot(jhu4_ests, jhu4_q_stem)
+ggplot2::ggsave("images/jhu4_plot.png", jhu4_plot, width = 8, height = 10, units = "in", dpi = 300)
+jhu4_plot
+```
+
+### JHU5 Questions
+
+```{r jhu5_plot}
+# Process JHU5 questions
+jhu5_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU5")) |> 
+  select(question) |> 
+  first() |> 
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |> 
+  stringr::str_remove("\\s*\\[$")) |> 
+  pull(stem) |> 
+  unique()
+
+jhu5_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU5")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+jhu5_ests <- process_survey_questions(svy_design, jhu5_qs, "party_switch_analysis")
+```
+
+```{r render_jhu5_plot}
+jhu5_plot <- create_forest_plot(jhu5_ests, jhu5_q_stem)
+ggplot2::ggsave("images/jhu5_plot.png", jhu5_plot, width = 8, height = 10, units = "in", dpi = 300)
+jhu5_plot
+```
+
+### JHU6 Questions
+
+```{r jhu6_plot}
+# Process JHU6 questions
+jhu6_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU6")) |> 
+  select(question) |> 
+  first() |> 
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |> 
+  stringr::str_remove("\\s*\\[$")) |> 
+  pull(stem) |> 
+  unique()
+
+jhu6_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU6")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded"))
+
+jhu6_ests <- process_survey_questions(svy_design, jhu6_qs, "party_switch_analysis")
+```
+
+```{r render_jhu6_plot}
+jhu6_plot <- create_forest_plot(jhu6_ests, jhu6_q_stem)
+ggplot2::ggsave("images/jhu6_plot.png", jhu6_plot, width = 8, height = 10, units = "in", dpi = 300)
+jhu6_plot
+```
+
+### JHU7 Questions
+
+```{r jhu7_plot}
+# Process JHU7 questions
+jhu7_q_stem <- meta |> 
+  filter(stringr::str_starts(var, "JHU7")) |> 
+  select(question) |> 
+  first() |> 
+  mutate(stem = stringr::str_extract(question, "^(.*?)\\s*\\[") |> 
+  stringr::str_remove("\\s*\\[$")) |> 
+  pull(stem) |> 
+  unique()
+
+jhu7_qs <- meta |>
+  filter(stringr::str_starts(var, "JHU7")) |>
+  select(var, topic) |>
+  mutate(var = paste0(var, "_recoded")) |> 
+  filter(!is.na(topic)) |> 
+  filter(!stringr::str_starts(topic, "Other"))
+
+jhu7_ests <- process_survey_questions(svy_design, jhu7_qs, "party_switch_analysis")
+```
+
+```{r render_jhu7_plot}
+jhu7_plot <- create_forest_plot(jhu7_ests, jhu7_q_stem)
+ggplot2::ggsave("images/jhu7_plot.png", jhu7_plot, width = 12, height = 14, units = "in", dpi = 300)
+jhu7_plot
+```

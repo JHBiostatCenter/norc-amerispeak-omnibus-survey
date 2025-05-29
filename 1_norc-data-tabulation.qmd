@@ -1,0 +1,304 @@
+---
+title: "NORC AmeriSpeak Omnibus: Data Processing and Tabulation"
+author: "Erik Westlund"
+date: "2025-03-28"
+date-modified: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format: 
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 5
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 10
+)
+
+# Load all required packages and source utility files
+source("project-setup.R")
+
+# Initialize tabulations list for storing results
+tabulations <- list()
+```
+
+```{r data_prep}
+#| label: data-prep
+#| cache: true
+
+# Define variables of interest with proper names and documentation
+table_1_vars <- c(
+  "Age" = "age_cat",
+  "Race/Ethnicity" = "race_eth_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Region" = "region_cat",
+  "Party Identification" = "PartyID5",
+  "2020 Vote" = "candidate_2020",
+  "2024 Vote" = "candidate_2024",
+  "Vote Classification" = "party_switch_analysis"
+)
+
+# Ensure names are properly set
+names(table_1_vars) <- table_1_vars
+
+# Prepare and clean data
+t_data <- data |>
+  # Select required variables
+  select(
+    CaseId, 
+    WEIGHT_EN,
+    all_of(unname(table_1_vars))
+  ) |>
+  # Clean and factorize candidate variables
+  mutate(
+    candidate_2020 = fct_drop(factor(
+      candidate_2020, 
+      exclude = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+    )),
+    candidate_2024 = fct_drop(factor(
+      candidate_2024, 
+      exclude = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+    ))
+  ) |>
+  # Remove rows with invalid weights
+  filter(WEIGHT_EN > 1e-10)
+
+# Create survey design with explicit NA handling
+svy_design <- svydesign(
+  ids = ~1, 
+  weights = ~WEIGHT_EN, 
+  data = t_data,
+  na.action = na.omit
+)
+
+# Generate table 1 using utility functions
+table_1 <- generate_demographic_table(t_data, table_1_vars, svy_design)
+
+# Calculate survey totals
+svy_total <- svytotal(~one, update(svy_design, one = 1))
+wt_total <- coef(svy_total)[1]
+se_total <- SE(svy_total)[1]
+
+# Create totals row
+table_1_totals <- tibble(
+  value = "All Respondents",
+  unweighted_n = nrow(t_data),
+  weighted_n = format_table_numbers(wt_total),
+  se = format_table_numbers(se_total),
+  ci_lb = format_table_numbers(wt_total - 1.96 * se_total),
+  ci_ub = format_table_numbers(wt_total + 1.96 * se_total)
+)
+
+# Add header row for totals section
+table_1_totals <- rbind(
+  tibble(
+    value = "Total",
+    unweighted_n = "",
+    weighted_n = "",
+    se = "",
+    ci_lb = "",
+    ci_ub = ""
+  ),
+  table_1_totals
+)
+
+# Combine and clean final table
+table_1_final <- bind_rows(table_1, table_1_totals) |>
+  # Replace NA values with empty strings
+  mutate(across(everything(), ~ ifelse(is.na(.), "", .))) |> 
+  # Rename columns for display
+  rename(
+    "Variable" = value,
+    "N (Unweighted)" = unweighted_n,
+    "N (Weighted)" = weighted_n,
+    "SE" = se,
+    "CI Lower" = ci_lb,
+    "CI Upper" = ci_ub
+  )
+```
+
+# Demographic Characteristics
+
+```{r}
+# Display formatted table with caption
+format_table_for_display(
+  table_1_final, 
+  "Table 1: Demographic Characteristics of Survey Respondents"
+)
+```
+
+
+# Categories of interest
+
+*Note*: For party, original categories are Democrat, Lean Democrat, Don't Lean/Independent/None, Lean Republican, Republican
+
+```{r categories_of_interest}
+#| label: categories
+#| echo: false
+#| results: asis
+
+tabulations <- aggregate_var_tabulations(race_eth_cat, "Race/Ethnicity", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(age_cat, "Age", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(gender_cat, "Gender", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(region_cat, "Region", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(education_cat, "Education", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(income_cat, "Income", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(party_cat, "Party Identification", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(vote_status_2020, "2020 Vote Status", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(
+  candidate_2020,
+  "2020 Candidate",
+  filter_var = "voted_2020", 
+  filter_value = TRUE, 
+  filter_reason = "Voted in 2020", 
+  tabulations_list = tabulations
+)
+tabulations <- aggregate_var_tabulations(vote_status_2024, "2024 Vote Status", tabulations_list = tabulations)
+tabulations <- aggregate_var_tabulations(
+  candidate_2024,
+  "2024 Candidate",
+  filter_var = "voted_2024", 
+  filter_value = TRUE, 
+  filter_reason = "Voted in 2024", 
+  tabulations_list = tabulations
+)
+
+tabulations <- aggregate_var_tabulations(
+  candidate_switch,
+  "2024 Candidate Switch Status",
+  filter_var = "voted_and_reported_candidates_2020_2024", 
+  filter_value = TRUE, 
+  filter_reason = "Voted in 2020 and 2024 and answered candidate 2020 and 2024",
+  tabulations_list = tabulations
+)
+tabulations <- aggregate_var_tabulations(
+  party_switch_expanded,
+  "2024 Party Switch Status Expanded",
+  filter_var = "voted_and_reported_candidates_2020_2024",
+  filter_value = TRUE, 
+  filter_reason = "Voted in 2020 and 2024 and answered candidate 2020 and 2024",
+  tabulations_list = tabulations
+)
+tabulations <- aggregate_var_tabulations(
+  party_switch,
+  "2024 Party Switch Status",
+  filter_var = "voted_and_reported_candidates_2020_2024", 
+  filter_value = TRUE, 
+  filter_reason = "Voted in 2020 and 2024 and answered candidate 2020 and 2024",
+  tabulations_list = tabulations
+)
+
+display_var_tabulations(tabulations)
+```
+
+
+# Survey Questions
+ 
+For each measure, we will output univariate statistics as well as cross-tabulations with the above variables of interest.
+
+```{r item_analysis}
+#| label: item-analysis
+#| echo: false
+#| results: asis
+
+# Use the meta data to get all variables that start with "JHU"
+survey_items <- meta |> 
+  filter(str_detect(var, "^JHU")) 
+
+# Filter out "Other issue(s)" topic, with exception of "other issues matter" (at all)
+survey_items <- survey_items |>
+  filter(is.na(topic) | !(!is.na(routing_logic) & topic == "Other issue(s)"))
+
+# Filter out where routling logic is "DON'T KNOW", "SKIPPED ON WEB", or "REFUSED"
+survey_items <- survey_items |>
+  filter(!(routing_logic %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")))
+
+# Initialize an empty list to store all tabulations
+item_tabulations <- list()
+
+# Tabulate each variable, univariate.
+for (survey_item in survey_items$var) {
+  # Fetch the metadata for each variable from `meta`
+  meta_info <- meta |> filter(var == survey_item)
+  topic <- meta_info$topic
+  question <- meta_info$question
+  routing_logic <- meta_info$routing_logic
+  
+  univariate_tabulation <- tabulate_var(survey_item, topic, question)
+
+  # Add the metadata (question, topic, routing logic) to the results
+  item_tabulations[[survey_item]] <- list(
+    topic = meta_info$topic,
+    question = meta_info$question,
+    routing_logic = meta_info$routing_logic,
+    univariate_tabulation = univariate_tabulation
+  )
+}
+
+# Now, we need to cross-tabulate by the categories of interest.
+cross_vars <- c(
+  "race_eth_cat" = "Race/Ethnicity",
+  "age_cat" = "Age",
+  "gender_cat" = "Gender",
+  "region_cat" = "Region",
+  "education_cat" = "Education Level",
+  "income_cat" = "Income",
+  "party_cat" = "Party Identification",
+  "candidate_2020" = "2020 Candidate",
+  "candidate_2024" = "2024 Candidate",
+  "party_switch" = "Party Switch",
+  "party_switch_expanded" = "Party Switch Expanded"
+)
+
+# Loop through each JHU variable and cross-tabulate
+for (survey_item in survey_items$var) {
+  # Fetch the metadata for each variable from `meta`
+  meta_info <- meta |> filter(var == survey_item)
+
+  # Perform cross-tabulations for each cross variable
+  cross_tab_results <- list()
+
+  # Loop over cross_vars, where the name is the variable and the value is the pretty name
+  for (cross_var in names(cross_vars)) {
+    # Call the cross_tabulate_var function and store the results with the pretty name
+    cross_tab_results[[cross_var]] <- cross_tabulate_var(survey_item, cross_var)
+    cross_tab_results[[cross_var]]$display_name <- cross_vars[[cross_var]]
+  }
+
+  # Append the results to the item_tabulations list
+  current_tabulation <- item_tabulations[[survey_item]]
+  current_tabulation$cross_tabulations <- cross_tab_results
+  
+  # Overwrite
+  item_tabulations[[survey_item]] <- current_tabulation
+}
+
+# Display
+display_item_tabulations(item_tabulations)
+```
+
+```{r save-data}
+#| label: save-data
+#| echo: false
+
+saveRDS(data, "data/analysis_data.rds")
+saveRDS(meta, "data/analysis_meta.rds")
+saveRDS(tabulations, "data/analysis_tabulations.rds")
+saveRDS(item_tabulations, "data/analysis_item_tabulations.rds")
+```
