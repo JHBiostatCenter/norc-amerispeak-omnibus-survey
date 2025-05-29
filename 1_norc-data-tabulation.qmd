@@ -36,6 +36,7 @@ source("project-setup.R")
 tabulations <- list()
 ```
 
+
 ```{r data_prep}
 #| label: data-prep
 #| cache: true
@@ -77,7 +78,8 @@ t_data <- data |>
     ))
   ) |>
   # Remove rows with invalid weights
-  filter(WEIGHT_EN > 1e-10)
+  filter(WEIGHT_EN > 1e-10) |>
+  mutate(one = 1)
 
 # Create survey design with explicit NA handling
 svy_design <- svydesign(
@@ -91,7 +93,7 @@ svy_design <- svydesign(
 table_1 <- generate_demographic_table(t_data, table_1_vars, svy_design)
 
 # Calculate survey totals
-svy_total <- svytotal(~one, update(svy_design, one = 1))
+svy_total <- svytotal(~one, svy_design)
 wt_total <- coef(svy_total)[1]
 se_total <- SE(svy_total)[1]
 
@@ -179,22 +181,6 @@ tabulations <- aggregate_var_tabulations(
   tabulations_list = tabulations
 )
 
-tabulations <- aggregate_var_tabulations(
-  candidate_switch,
-  "2024 Candidate Switch Status",
-  filter_var = "voted_and_reported_candidates_2020_2024", 
-  filter_value = TRUE, 
-  filter_reason = "Voted in 2020 and 2024 and answered candidate 2020 and 2024",
-  tabulations_list = tabulations
-)
-tabulations <- aggregate_var_tabulations(
-  party_switch_expanded,
-  "2024 Party Switch Status Expanded",
-  filter_var = "voted_and_reported_candidates_2020_2024",
-  filter_value = TRUE, 
-  filter_reason = "Voted in 2020 and 2024 and answered candidate 2020 and 2024",
-  tabulations_list = tabulations
-)
 tabulations <- aggregate_var_tabulations(
   party_switch,
   "2024 Party Switch Status",

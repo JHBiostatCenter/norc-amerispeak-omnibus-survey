@@ -4,7 +4,9 @@ This repository contains code and notebooks for analysis of the NORC AmeriSpeak 
 
 ## Project Setup
 
-The project uses `renv` for package management to ensure reproducibility. The environment is managed through three key files:
+The project uses `renv` for package management to ensure reproducibility. 
+
+The environment is managed through three key files:
 
 - `packages.yml`: Defines all required R packages in a single location
 - `r-setup.R`: Manages `renv` package versions and dependencies
@@ -81,16 +83,21 @@ The analysis is split into five files. While the reports are numbered, the only 
 packages.yml                    # Package definitions
 r-setup.R                       # renv initialization
 project-setup.R                 # Package loading
+build-meta-df.R                 # Creates metadata frame from codebook
+build-data-df.R                 # Processes raw data and creates analysis variables
+build-svy-design.R              # Creates survey design object for analysis
 render-quarto-notebooks.R       # Notebook compilation
 ```
+
 ### Styling & Utilities
 
 ```
 colors.R                        # Color definitions
 theme-jhu.R                     # JHU plotting theme
 load-data.R                     # Data loading functions
+table-utils.R                   # Table formatting
+data-labels.R                   # Variable labels and recoding functions
 utils.R                         # General utilities
-table_utils.R                   # Table formatting
 ```
 
 ### Data & Output
@@ -99,6 +106,26 @@ table_utils.R                   # Table formatting
 data/                           # Processed data files
 images/                         # Generated visualizations
 ```
+
+## Data Processing Pipeline
+
+The data processing pipeline has been refactored into modular components:
+
+1. **Metadata Processing** (`build-meta-df.R`)
+   - Creates metadata frame from codebook
+   - Handles variable descriptions and response sets
+
+2. **Data Processing** (`build-data-df.R`)
+   - Loads raw SAS data
+   - Applies variable labels
+   - Creates derived variables through modular functions:
+     - `create_demographic_vars()`: Demographic variables
+     - `create_voting_vars()`: Voting-related variables
+     - `create_party_vars()`: Party affiliation and switching
+
+3. **Survey Design** (`build-svy-design.R`)
+   - Creates `survey` design object
+   - Handles weights and survey design
 
 ## Author
 

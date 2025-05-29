@@ -13,6 +13,7 @@ format:
     fontsize: 1em
     linestretch: 1.1
     self-contained: true
+  docx: default
 execute:
   echo: false
   warning: false

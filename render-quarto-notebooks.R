@@ -2,7 +2,7 @@
 render_file <- function(file) {
   message(sprintf("\nRendering %s...", file))
   start_time <- Sys.time()
-  quarto::quarto_render(file, output_format = "html")
+  quarto::quarto_render(file)
   end_time <- Sys.time()
   duration <- round(as.numeric(difftime(end_time, start_time, units = "secs")), 1)
   message(sprintf("✓ Completed %s in %s seconds", file, duration))

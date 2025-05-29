@@ -13,7 +13,7 @@ source("colors.R")
 source("theme-jhu.R")
 source("utils.R") # Load utils.R first
 source("load-data.R") # Then load-data.R which depends on utils.R
-source("table_utils.R")
+source("table-utils.R")
 
 # Function to load analysis data and create survey design
 load_analysis_data <- function() {
