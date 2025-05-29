@@ -66,28 +66,39 @@ The analysis is split into five files. While the reports are numbered, the only 
 ## Project Structure
 
 ### Analysis Notebooks
+
+```
 1_norc-data-tabulation.qmd      # Initial data processing and tabulation
 2_norc-report-generation.qmd    # Main report generation
 3_paper-artifact-creation.qmd   # Visualizations and analyses
 4_statistical-tests.qmd         # Party difference analysis
 5_table-generation.qmd          # Publication tables
+```
 
 ### Setup & Configuration
+
+```
 packages.yml                    # Package definitions
 r-setup.R                       # renv initialization
 project-setup.R                 # Package loading
 render-quarto-notebooks.R       # Notebook compilation
-
+```
 ### Styling & Utilities
+
+```
 colors.R                        # Color definitions
 theme-jhu.R                     # JHU plotting theme
 load-data.R                     # Data loading functions
 utils.R                         # General utilities
 table_utils.R                   # Table formatting
+```
 
 ### Data & Output
+
+```
 data/                           # Processed data files
 images/                         # Generated visualizations
+```
 
 ## Author
 
