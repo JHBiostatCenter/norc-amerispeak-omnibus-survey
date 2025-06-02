@@ -33,9 +33,11 @@ knitr::opts_chunk$set(
 source("project-setup.R")
 ```
 
-## Demographics Table
+## Demographics Tables
 
-```{r demographics_table}
+::: {.panel-tabset}
+#### Full Table with SEs
+```{r demographics_table_full}
 #| echo: false
 #| warning: false
 #| message: false
@@ -68,10 +70,10 @@ total_rows <- tibble(
   `N` = c("", format(sum(!is.na(data$party_switch_analysis)), big.mark = ",")),
   `N (Wtd.)` = c("", format(round(sum(weights(subset(svy_design, !is.na(party_switch_analysis)))), 1), big.mark = ",")),
   `% (SE)` = c("", "100.0 (0.0)"),
-  `Trump Voter` = c("", "100.0 (0.0)"),
-  `New Trump Voter` = c("", "100.0 (0.0)"),
-  `Biden/Harris Voter` = c("", "100.0 (0.0)"),
-  `New Harris Voter` = c("", "100.0 (0.0)")
+  `New Trump Voter` = c("", ""),
+  `Trump Voter` = c("", ""),
+  `New Harris Voter` = c("", ""),
+  `Biden/Harris Voter` = c("", "")
 )
 
 # Build the table
@@ -92,10 +94,10 @@ demographics_table <- map_dfr(names(demographic_vars), function(label) {
     `N` = "",
     `N (Wtd.)` = "",
     `% (SE)` = "",
-    `Trump Voter` = "",
     `New Trump Voter` = "",
-    `Biden/Harris Voter` = "",
-    `New Harris Voter` = ""
+    `Trump Voter` = "",
+    `New Harris Voter` = "",
+    `Biden/Harris Voter` = ""
   )
   
   # Category-level rows
@@ -161,18 +163,18 @@ demographics_table <- map_dfr(names(demographic_vars), function(label) {
       `N` = format(unweighted_n, big.mark = ","),
       `N (Wtd.)` = format(round(weighted_n, 1), big.mark = ","),
       `% (SE)` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
-      `Trump Voter` = sprintf("%.1f (%.1f)", 
-        vote_status_percents$pct[vote_status_percents$vote_status == "Trump Voter"],
-        vote_status_percents$se[vote_status_percents$vote_status == "Trump Voter"]),
       `New Trump Voter` = sprintf("%.1f (%.1f)", 
         vote_status_percents$pct[vote_status_percents$vote_status == "New Trump Voter"],
         vote_status_percents$se[vote_status_percents$vote_status == "New Trump Voter"]),
-      `Biden/Harris Voter` = sprintf("%.1f (%.1f)", 
-        vote_status_percents$pct[vote_status_percents$vote_status == "Biden/Harris Voter"],
-        vote_status_percents$se[vote_status_percents$vote_status == "Biden/Harris Voter"]),
+      `Trump Voter` = sprintf("%.1f (%.1f)", 
+        vote_status_percents$pct[vote_status_percents$vote_status == "Trump Voter"],
+        vote_status_percents$se[vote_status_percents$vote_status == "Trump Voter"]),
       `New Harris Voter` = sprintf("%.1f (%.1f)", 
         vote_status_percents$pct[vote_status_percents$vote_status == "New Harris Voter"],
-        vote_status_percents$se[vote_status_percents$vote_status == "New Harris Voter"])
+        vote_status_percents$se[vote_status_percents$vote_status == "New Harris Voter"]),
+      `Biden/Harris Voter` = sprintf("%.1f (%.1f)", 
+        vote_status_percents$pct[vote_status_percents$vote_status == "Biden/Harris Voter"],
+        vote_status_percents$se[vote_status_percents$vote_status == "Biden/Harris Voter"])
     )
   })
   
@@ -192,3 +194,59 @@ demographics_table |>
   add_header_above(c(" " = 1, "All" = 3, "Weighted Estimates: % (SE)" = 4)) |>
   row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
 ```
+
+#### Without New Harris Voter
+```{r demographics_table_no_new_harris}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Use the same demographics_table but remove the New Harris Voter column
+demographics_table |> 
+  select(-`New Harris Voter`) |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  add_header_above(c(" " = 1, "All" = 3, "Weighted Estimates: % (SE)" = 3)) |>
+  row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
+```
+
+#### Without Standard Errors
+```{r demographics_table_no_se}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create a version without standard errors
+demographics_table_no_se <- demographics_table |>
+  rename(
+    `%` = `% (SE)`,
+    `New Trump Voter %` = `New Trump Voter`,
+    `Trump Voter %` = `Trump Voter`,
+    `New Harris Voter %` = `New Harris Voter`,
+    `Biden/Harris Voter %` = `Biden/Harris Voter`
+  ) |>
+  mutate(across(c(`%`, `New Trump Voter %`, `Trump Voter %`, `New Harris Voter %`, `Biden/Harris Voter %`),
+                ~str_replace(., "\\([0-9.]+\\).*$", "")))
+
+demographics_table_no_se |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  add_header_above(c(" " = 1, "All" = 3, "Weighted Estimates: %" = 4)) |>
+  row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
+```
+
+#### Without SEs and New Harris
+```{r demographics_table_no_se_no_new_harris}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create a version without standard errors and without New Harris Voter
+demographics_table_no_se |> 
+  select(-`New Harris Voter %`) |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  add_header_above(c(" " = 1, "All" = 3, "Weighted Estimates: %" = 3)) |>
+  row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
+```
+:::
