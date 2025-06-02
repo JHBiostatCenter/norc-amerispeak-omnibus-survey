@@ -14,7 +14,8 @@ files <- c(
   "2_norc-report-generation.qmd",
   "3_paper-artifact-creation.qmd",
   "4_statistical-tests.qmd",
-  "5_table-generation.qmd"
+  "5_table-generation.qmd",
+  "6_final-tables.qmd"
 )
 
 # Render each file

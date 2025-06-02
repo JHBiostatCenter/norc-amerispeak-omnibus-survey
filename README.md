@@ -64,17 +64,25 @@ The analysis is split into five files. While the reports are numbered, the only 
    - Creates publication-ready tables with weighted percentages and standard errors
    - Includes demographic cross-tabulations and policy position comparisons
    - Outputs both HTML and Word formats
+   - Draft attemps
+
+6. `6_final-tables.qmd`: Final publication tables
+   - Creates final, publication-ready tables with weighted percentages and standard errors
+   - Focuses on demographic cross-tabulations and vaccine-related policy positions
+   - Features tabbed views with and without standard errors
+   - Outputs both HTML and Word formats
+   - Final version for publication
 
 ## Project Structure
 
 ### Analysis Notebooks
 
-```
-1_norc-data-tabulation.qmd      # Initial data processing and tabulation
+```1_norc-data-tabulation.qmd      # Initial data processing and tabulation
 2_norc-report-generation.qmd    # Main report generation
 3_paper-artifact-creation.qmd   # Visualizations and analyses
 4_statistical-tests.qmd         # Party difference analysis
-5_table-generation.qmd          # Publication tables
+5_table-generation.qmd          # Draft tables
+6_final-tables.qmd              # Final publication tables
 ```
 
 ### Setup & Configuration
@@ -134,3 +142,4 @@ Johns Hopkins Biostatistics Center
 Department of Biostatistics  
 Johns Hopkins Bloomberg School of Public Health  
 ewestlu1@jhu.edu
+

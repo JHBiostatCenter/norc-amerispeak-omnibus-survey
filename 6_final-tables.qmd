@@ -2,15 +2,16 @@
 title: "NORC AmeriSpeak Omnibus: Final Tables"
 author: "Erik Westlund"
 date: "2025-03-28"
-format: html
-toc: true
-toc-float: true
-toc-depth: 5
-theme: cosmo
-code-fold: true
-fontsize: 1em
-linestretch: 1.1
-self-contained: true
+format: 
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 5
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
 execute:
   echo: false
   warning: false
@@ -33,7 +34,7 @@ knitr::opts_chunk$set(
 source("project-setup.R")
 ```
 
-## Demographics Tables
+## Table 1. Demographics
 
 ::: {.panel-tabset}
 #### Full Table with SEs
@@ -250,3 +251,120 @@ demographics_table_no_se |>
   row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
 ```
 :::
+
+## Table 2. Vaccine-Related Questions
+
+```{r table_2, echo=FALSE, message=FALSE, warning=FALSE}
+# Define vaccine-related variables
+vaccine_vars <- c(
+  "JHU7_9",  # Vaccines as election issue
+  "JHU5A",   # Continue government support for vaccines
+  "JHU6C"    # Removing school vaccination requirements
+)
+
+# Filter meta for this block
+meta_vaccine <- meta |> filter(var %in% vaccine_vars)
+
+# Party categories to loop across
+party_levels <- c("New Trump Voter", "Trump Voter", "New Harris Voter", "Biden/Harris Voter")
+
+# Build table
+table_2 <- map_dfr(vaccine_vars, function(var) {
+  # Prepare data for chi-square
+  temp_data_all <- data |>
+    filter(
+      !is.na(get(var)),
+      !get(var) %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+      !is.na(party_switch_analysis)
+    ) |>
+    mutate(.var = droplevels(factor(get(var))))
+  
+  temp_design_all <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data_all)
+  
+  # Special handling for JHU7_9
+  if (var == "JHU7_9") {
+    topic <- "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>"
+  } else if (var == "JHU5A") {
+    topic <- "<strong>Here is a list of specific policy goals. To what extent would you support or oppose them?</strong><br><em>Continue government support for research and development of new vaccines</em>"
+  } else if (var == "JHU6C") {
+    topic <- "<em>Removing school vaccination requirements</em>"
+  } else {
+    topic <- meta_vaccine |> filter(var == !!var) |> pull(topic)
+  }
+  
+  # Topic header
+  header_row <- tibble(
+    Response = topic,
+    `New Trump Voter %` = "",
+    `Trump Voter %` = "",
+    `New Harris Voter %` = "",
+    `Biden/Harris Voter %` = ""
+  )
+  
+  # Get response categories
+  responses <- levels(droplevels(factor(data[[var]])))
+  responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+  
+  # For JHU7_9, only keep "Yes" but change the label
+  if (var == "JHU7_9") {
+    responses <- "<em>Vaccines</em> [selected as 1 of 3]"
+  }
+  
+  # Response-level rows
+  category_rows <- map_dfr(responses, function(response) {
+    temp_data <- data |> 
+      filter(!is.na(get(var)), !is.na(party_switch_analysis)) |> 
+      mutate(temp = ifelse(
+        # Special handling for JHU7_9 to look for "Yes" responses
+        if (var == "JHU7_9") {
+          as.character(get(var)) == "Yes"
+        } else {
+          as.character(get(var)) == response
+        },
+        1, 0))
+    
+    temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+    
+    prop_result <- svyby(
+      ~temp,
+      ~party_switch_analysis,
+      design = temp_design,
+      svymean,
+      na.rm = TRUE,
+      drop.empty.groups = FALSE
+    )
+    
+    prop_df <- tibble(
+      group = prop_result$party_switch_analysis,
+      pct = 100 * as.numeric(prop_result$temp),
+      se = 100 * as.numeric(SE(prop_result))
+    ) |>
+      right_join(tibble(group = party_levels), by = "group") |>
+      mutate(
+        pct = ifelse(is.na(pct), 0, pct),
+        se = ifelse(is.na(se), 0, se),
+        formatted = sprintf("%.1f (%.1f)", pct, se)
+      )
+    
+    tibble(
+      Response = response,
+      `New Trump Voter %` = prop_df$formatted[prop_df$group == "New Trump Voter"],
+      `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
+      `New Harris Voter %` = prop_df$formatted[prop_df$group == "New Harris Voter"],
+      `Biden/Harris Voter %` = prop_df$formatted[prop_df$group == "Biden/Harris Voter"]
+    )
+  })
+  
+  bind_rows(header_row, category_rows)
+})
+
+table_2 |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  add_header_above(c(" " = 1, "Weighted Estimates: % (SE)" = 4)) |>
+  column_spec(1, width = "60%") |>
+  column_spec(2:5, width = "10%") |>
+  column_spec(2:5, extra_css = "white-space: nowrap; overflow: hidden;")
+```
