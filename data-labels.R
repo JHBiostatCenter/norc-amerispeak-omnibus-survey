@@ -606,11 +606,11 @@ labels <- list(
     `6` = "Asian-Pacific Islander, non-Hispanic"
   ),
   EDUC5 = c(
-    `1` = "Less than HS",
-    `2` = "HS graduate or equivalent",
-    `3` = "Some college/ associates degree",
+    `1` = "Less than high school",
+    `2` = "High school graduate or equivalent",
+    `3` = "Some college/associates degree",
     `4` = "Bachelor's degree",
-    `5` = "Post grad study/professional degree"
+    `5` = "Postgraduate study/professional degree"
   ),
   MARITAL = c(
     `1` = "Married",

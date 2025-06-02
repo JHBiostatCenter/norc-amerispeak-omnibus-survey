@@ -91,7 +91,9 @@ generate_table_1 <- function(table_1_results, table_1_vars) {
     all_cats <- table_1_results[[var_name]]$overall |>
       select(Category = 1) |>
       mutate(Category = as.character(Category)) |>
-      filter(!is.na(Category))
+      filter(!is.na(Category)) |>
+      # Filter out Unknown for gender
+      filter(!(var_name == "gender_cat" & Category == "Unknown"))
 
     overall <- table_1_results[[var_name]]$overall |>
       select(Category = 1, `Overall % (SE)` = pct_wtd) |>
