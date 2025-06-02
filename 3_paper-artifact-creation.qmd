@@ -169,8 +169,8 @@ create_forest_plot <- function(ests, question_stem) {
   filtered_data <- item_data |>
     mutate(party = factor(
       party,
-      levels = c("New Democrat", "Democrat", "New Republican", "Republican"),
-      labels = c("New Democrat", "Democrat", "New Republican", "Republican")  # Rename "New Republican" to "New Republican"
+      levels = c("New Harris Voter", "Biden/Harris Voter", "New Trump Voter", "Trump Voter"),
+      labels = c("New Harris Voter", "Biden/Harris Voter", "New Trump Voter", "Trump Voter")
     ))
   
 filtered_data <- filtered_data |>
@@ -199,10 +199,10 @@ filtered_data <- filtered_data |>
     plot_data$party,
     levels = c(
       unique(topic_separators$party),
-      "Democrat",
-      "New Democrat",
-      "Republican",
-      "New Republican"
+      "Biden/Harris Voter",
+      "New Harris Voter",
+      "Trump Voter",
+      "New Trump Voter"
     ),
     ordered = TRUE
   )
@@ -247,10 +247,10 @@ filtered_data <- filtered_data |>
       labels = scales::percent_format(scale = 1)
     ) +
     scale_color_manual(values = c(
-      "New Democrat" = "gray",
-      "Democrat" = "blue",
-      "New Republican" = "purple",
-      "Republican" = "red"
+      "New Harris Voter" = "gray",
+      "Biden/Harris Voter" = "blue",
+      "New Trump Voter" = "purple",
+      "Trump Voter" = "red"
     )) +
     labs(title = str_wrap(question_stem, width = 70),
          caption= str_wrap("Weighted estimates. Only the most common response category is shown. Democrat/Republican mean respondent voted for these parties in both 2020 and 2024. Percents shown add up to 100% within party/switch status.", 80),
@@ -295,9 +295,9 @@ filtered_data <- filtered_data |>
 
 We analyze voting patterns using the following categories:
 
-- **Democrat**: Voted for Joe Biden then Kamala Harris
-- **Republican**: Voted for Donald Trump twice
-- **New Republican**: Did not vote for Trump in 2020 but voted for Trump in 2024
+- **Biden/Harris Voter**: Voted for Joe Biden then Kamala Harris
+- **Trump Voter**: Voted for Donald Trump twice
+- **New Trump Voter**: Did not vote for Trump in 2020 but voted for Trump in 2024
   - Includes those who voted for Biden, did not vote, or voted third party in 2020
   - Excludes those who did not provide 2020 voting information
 

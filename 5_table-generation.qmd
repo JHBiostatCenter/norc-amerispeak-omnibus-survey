@@ -75,8 +75,12 @@ t_data <- data |>
     candidate_2024 = fct_drop(factor(candidate_2024, exclude = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")))
   )
   
-svy_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = t_data)
-
+svy_design <- svydesign(
+  ids = ~1, 
+  weights = ~WEIGHT_EN, 
+  data = t_data,
+  na.action = na.omit
+)
 # Get Table 1 results
 table_1 <- map_dfr(names(table_1_vars), function(label) {
   var <- table_1_vars[[label]]
@@ -190,8 +194,8 @@ table_2_vars <- c(
 
 svy_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = t_data)
 
-party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
-col_names <- c("Percent Democrat (SE)", "Percent Republican (SE)", "Percent New Democrat (SE)", "Percent New Republican (SE)")
+party_levels <- c("Biden/Harris Voter", "Trump Voter", "New Harris Voter", "New Trump Voter")
+col_names <- c("Percent Biden/Harris Voter (SE)", "Percent Trump Voter (SE)", "Percent New Harris Voter (SE)", "Percent New Trump Voter (SE)")
 
 # Build the table
 table_2 <- map_dfr(names(table_2_vars), function(label) {
@@ -224,10 +228,10 @@ table_2 <- map_dfr(names(table_2_vars), function(label) {
 
     tibble(
       Category = as.character(level_val),
-      !!col_names[1] := sprintf("%.1f (%.1f)", pct["Democrat"], se["Democrat"]),
-      !!col_names[2] := sprintf("%.1f (%.1f)", pct["Republican"], se["Republican"]),
-      !!col_names[3] := sprintf("%.1f (%.1f)", pct["New Democrat"], se["New Democrat"]),
-      !!col_names[4] := sprintf("%.1f (%.1f)", pct["New Republican"], se["New Republican"])
+      !!col_names[1] := sprintf("%.1f (%.1f)", pct["Biden/Harris Voter"], se["Biden/Harris Voter"]),
+      !!col_names[2] := sprintf("%.1f (%.1f)", pct["Trump Voter"], se["Trump Voter"]),
+      !!col_names[3] := sprintf("%.1f (%.1f)", pct["New Harris Voter"], se["New Harris Voter"]),
+      !!col_names[4] := sprintf("%.1f (%.1f)", pct["New Trump Voter"], se["New Trump Voter"])
     )
   })
 
@@ -264,7 +268,7 @@ jhu1_2_3_vars <- c(jhu1_vars, jhu2_vars, jhu3_vars)
 meta_jhu1_2_3 <- meta |> filter(var %in% jhu1_2_3_vars)
 
 # Party categories to loop across
-party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+party_levels <- c("Biden/Harris Voter", "Trump Voter", "New Harris Voter", "New Trump Voter")
 
 # Build table
 table_jhu1_2_3 <- map_dfr(jhu1_2_3_vars, function(var) {
@@ -295,10 +299,10 @@ table_jhu1_2_3 <- map_dfr(jhu1_2_3_vars, function(var) {
   # Topic header with asterisk if significant
   header_row <- tibble(
     Response = paste0(topic, sig),
-    `Democrat, Percent (SE)` = "",
-    `Republican, Percent (SE)` = "",
-    `New Democrat, Percent (SE)` = "",
-    `New Republican, Percent (SE)` = ""
+    `Biden/Harris Voter, Percent (SE)` = "",
+    `Trump Voter, Percent (SE)` = "",
+    `New Harris Voter, Percent (SE)` = "",
+    `New Trump Voter, Percent (SE)` = ""
   )
 
   # Get response categories
@@ -336,10 +340,10 @@ table_jhu1_2_3 <- map_dfr(jhu1_2_3_vars, function(var) {
 
     tibble(
       Response = response,
-      `Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "Democrat"],
-      `Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "Republican"],
-      `New Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "New Democrat"],
-      `New Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "New Republican"]
+      `Biden/Harris Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "Biden/Harris Voter"],
+      `Trump Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "Trump Voter"],
+      `New Harris Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "New Harris Voter"],
+      `New Trump Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "New Trump Voter"]
     )
   })
 
@@ -350,10 +354,10 @@ table_jhu1_2_3 <- map_dfr(jhu1_2_3_vars, function(var) {
     } else {
       "Test skipped due to low cell counts"
     },
-    `Democrat, Percent (SE)` = "",
-    `Republican, Percent (SE)` = "",
-    `New Democrat, Percent (SE)` = "",
-    `New Republican, Percent (SE)` = ""
+    `Biden/Harris Voter, Percent (SE)` = "",
+    `Trump Voter, Percent (SE)` = "",
+    `New Harris Voter, Percent (SE)` = "",
+    `New Trump Voter, Percent (SE)` = ""
   )
 
   bind_rows(header_row, category_rows, summary_row)
@@ -392,7 +396,7 @@ jhu4_5_6_vars <- c(jhu4_vars, jhu5_vars, jhu6_vars)
 meta_jhu4_5_6 <- meta |> filter(var %in% jhu4_5_6_vars)
 
 # Party categories to loop across
-party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+party_levels <- c("Biden/Harris Voter", "Trump Voter", "New Harris Voter", "New Trump Voter")
 
 # Build table
 table_jhu4_5_6 <- map_dfr(jhu4_5_6_vars, function(var) {
@@ -423,10 +427,10 @@ table_jhu4_5_6 <- map_dfr(jhu4_5_6_vars, function(var) {
   # Topic header with asterisk if significant
   header_row <- tibble(
     Response = paste0(topic, sig),
-    `Democrat, Percent (SE)` = "",
-    `Republican, Percent (SE)` = "",
-    `New Democrat, Percent (SE)` = "",
-    `New Republican, Percent (SE)` = ""
+    `Biden/Harris Voter, Percent (SE)` = "",
+    `Trump Voter, Percent (SE)` = "",
+    `New Harris Voter, Percent (SE)` = "",
+    `New Trump Voter, Percent (SE)` = ""
   )
 
   # Get response categories
@@ -464,10 +468,10 @@ table_jhu4_5_6 <- map_dfr(jhu4_5_6_vars, function(var) {
 
     tibble(
       Response = response,
-      `Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "Democrat"],
-      `Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "Republican"],
-      `New Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "New Democrat"],
-      `New Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "New Republican"]
+      `Biden/Harris Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "Biden/Harris Voter"],
+      `Trump Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "Trump Voter"],
+      `New Harris Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "New Harris Voter"],
+      `New Trump Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "New Trump Voter"]
     )
   })
 
@@ -478,10 +482,10 @@ table_jhu4_5_6 <- map_dfr(jhu4_5_6_vars, function(var) {
     } else {
       "Test skipped due to low cell counts"
     },
-    `Democrat, Percent (SE)` = "",
-    `Republican, Percent (SE)` = "",
-    `New Democrat, Percent (SE)` = "",
-    `New Republican, Percent (SE)` = ""
+    `Biden/Harris Voter, Percent (SE)` = "",
+    `Trump Voter, Percent (SE)` = "",
+    `New Harris Voter, Percent (SE)` = "",
+    `New Trump Voter, Percent (SE)` = ""
   )
 
   bind_rows(header_row, category_rows, summary_row)
@@ -509,7 +513,7 @@ jhu7_vars <- paste0("JHU7_", 1:12)
 meta_jhu7 <- meta |> filter(var %in% jhu7_vars)
 
 # Party categories to loop across
-party_levels <- c("Democrat", "Republican", "New Democrat", "New Republican")
+party_levels <- c("Biden/Harris Voter", "Trump Voter", "New Harris Voter", "New Trump Voter")
 
 # Build table
 table_jhu7 <- map_dfr(jhu7_vars, function(var) {
@@ -540,10 +544,10 @@ table_jhu7 <- map_dfr(jhu7_vars, function(var) {
   # Topic header with asterisk if significant
   header_row <- tibble(
     Response = paste0(topic, sig),
-    `Democrat, Percent (SE)` = "",
-    `Republican, Percent (SE)` = "",
-    `New Democrat, Percent (SE)` = "",
-    `New Republican, Percent (SE)` = ""
+    `Biden/Harris Voter, Percent (SE)` = "",
+    `Trump Voter, Percent (SE)` = "",
+    `New Harris Voter, Percent (SE)` = "",
+    `New Trump Voter, Percent (SE)` = ""
   )
 
   # Get response categories
@@ -580,10 +584,10 @@ table_jhu7 <- map_dfr(jhu7_vars, function(var) {
 
     tibble(
       Response = response,
-      `Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "Democrat"],
-      `Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "Republican"],
-      `New Democrat, Percent (SE)` = prop_df$formatted[prop_df$group == "New Democrat"],
-      `New Republican, Percent (SE)` = prop_df$formatted[prop_df$group == "New Republican"]
+      `Biden/Harris Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "Biden/Harris Voter"],
+      `Trump Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "Trump Voter"],
+      `New Harris Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "New Harris Voter"],
+      `New Trump Voter, Percent (SE)` = prop_df$formatted[prop_df$group == "New Trump Voter"]
     )
   })
 
@@ -594,10 +598,10 @@ table_jhu7 <- map_dfr(jhu7_vars, function(var) {
     } else {
       "X² Test skipped due to low cell counts"
     },
-    `Democrat, Percent (SE)` = "",
-    `Republican, Percent (SE)` = "",
-    `New Democrat, Percent (SE)` = "",
-    `New Republican, Percent (SE)` = ""
+    `Biden/Harris Voter, Percent (SE)` = "",
+    `Trump Voter, Percent (SE)` = "",
+    `New Harris Voter, Percent (SE)` = "",
+    `New Trump Voter, Percent (SE)` = ""
   )
 
   bind_rows(header_row, category_rows, summary_row)

@@ -255,7 +255,7 @@ Table 3 analyzes the relationship between policy positions and voting behavior i
 
 - Those who voted for the Democratic candidate (Kamala Harris)
 - Those who voted for the Republican candidate (Donald Trump)
-- Those who were new Republican voters (switched from other parties or non-voters)
+- Those who were new Trump voters (switched from other parties or non-voters)
 - The overall distribution in the sample
 
 This table helps identify which policy positions are most strongly associated with different voting patterns in the 2024 election.
@@ -311,7 +311,7 @@ generate_table_3 <- function(table_results, table_vars, meta) {
 
     voted_new_rep_2024 <- table_results[[var_name]]$new_rep_2024 |>
       filter(group == "TRUE") |>
-      select(Category = 1, `New Republican Voters 2024 % (SE)` = pct_wtd) |> 
+      select(Category = 1, `New Trump Voters 2024 % (SE)` = pct_wtd) |> 
       filter(Category != "SKIPPED ON WEB") |> 
       filter(Category != "DON'T KNOW") |> 
       mutate(Category = as.character(Category))
@@ -324,7 +324,7 @@ generate_table_3 <- function(table_results, table_vars, meta) {
         `Policy Position` = "",
         `Democratic Voters 2024 % (SE)` = replace_na(`Democratic Voters 2024 % (SE)`, "0.0 (0.0)"),
         `Republican Voters 2024 % (SE)` = replace_na(`Republican Voters 2024 % (SE)`, "0.0 (0.0)"),
-        `New Republican Voters 2024 % (SE)` = replace_na(`New Republican Voters 2024 % (SE)`, "0.0 (0.0)"),
+        `New Trump Voters 2024 % (SE)` = replace_na(`New Trump Voters 2024 % (SE)`, "0.0 (0.0)"),
         `Overall % (SE)` = replace_na(`Overall % (SE)`, "0.0 (0.0)")
       ) |>
       relocate(`Policy Position`)

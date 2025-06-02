@@ -1,0 +1,194 @@
+---
+title: "NORC AmeriSpeak Omnibus: Final Tables"
+author: "Erik Westlund"
+date: "2025-03-28"
+format: html
+toc: true
+toc-float: true
+toc-depth: 5
+theme: cosmo
+code-fold: true
+fontsize: 1em
+linestretch: 1.1
+self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup}
+#| include: false
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 10
+)
+
+# Load all required packages and source utility files
+source("project-setup.R")
+```
+
+## Demographics Table
+
+```{r demographics_table}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define variables of interest with proper names and documentation
+demographic_vars <- c(
+  "Age" = "age_cat",
+  "Race/Ethnicity" = "race_eth_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Region" = "region_cat",
+  "Party Identification" = "PartyID5"
+)
+
+# Create survey design
+svy_design <- svydesign(
+  ids = ~1, 
+  weights = ~WEIGHT_EN, 
+  data = data |> mutate(one = 1),
+  na.action = na.omit
+)
+
+# Party categories to loop across
+party_levels <- c("Trump Voter", "New Trump Voter", "Biden/Harris Voter", "New Harris Voter")
+
+# Add total rows
+total_rows <- tibble(
+  Category = c("Total", "2020/2024 Voters"),
+  `N` = c("", format(sum(!is.na(data$party_switch_analysis)), big.mark = ",")),
+  `N (Wtd.)` = c("", format(round(sum(weights(subset(svy_design, !is.na(party_switch_analysis)))), 1), big.mark = ",")),
+  `% (SE)` = c("", "100.0 (0.0)"),
+  `Trump Voter` = c("", "100.0 (0.0)"),
+  `New Trump Voter` = c("", "100.0 (0.0)"),
+  `Biden/Harris Voter` = c("", "100.0 (0.0)"),
+  `New Harris Voter` = c("", "100.0 (0.0)")
+)
+
+# Build the table
+demographics_table <- map_dfr(names(demographic_vars), function(label) {
+  var <- demographic_vars[[label]]
+  
+  # Get levels used in this variable
+  groups <- levels(droplevels(factor(data[[var]])))
+  
+  # Filter out "Unknown" for Party Identification
+  if (var == "PartyID5") {
+    groups <- groups[groups != "Unknown"]
+  }
+  
+  # Create dummy header row for the variable
+  header_row <- tibble(
+    Category = label,
+    `N` = "",
+    `N (Wtd.)` = "",
+    `% (SE)` = "",
+    `Trump Voter` = "",
+    `New Trump Voter` = "",
+    `Biden/Harris Voter` = "",
+    `New Harris Voter` = ""
+  )
+  
+  # Category-level rows
+  category_rows <- map_dfr(groups, function(level_val) {
+    # Calculate unweighted and weighted N
+    unweighted_n <- sum(!is.na(data[[var]]) & data[[var]] == level_val & !is.na(data$party_switch_analysis))
+    
+    # Calculate column percentages for each vote status
+    vote_status_percents <- map_dfr(party_levels, function(vote_status) {
+      # Subset design for this vote status
+      status_design <- subset(svy_design, party_switch_analysis == vote_status)
+      
+      # Calculate percentage of this demographic group within this vote status
+      subset_design <- subset(status_design, !is.na(get(var)) & get(var) == level_val)
+      
+      # Get weighted N for this group within this vote status
+      weighted_n <- sum(weights(subset_design))
+      
+      # Get total weighted N for this vote status
+      total_weighted_n <- sum(weights(status_design))
+      
+      # Calculate percentage
+      pct <- 100 * weighted_n / total_weighted_n
+      
+      # Calculate SE using survey package
+      se <- tryCatch({
+        # Create a binary indicator for this level
+        status_design$is_level <- as.numeric(status_design$variables[[var]] == level_val)
+        prop <- svymean(~is_level, design = status_design, na.rm = TRUE)
+        100 * as.numeric(SE(prop))
+      }, error = function(e) {
+        # If error, calculate SE using the formula for a proportion
+        p <- weighted_n / total_weighted_n
+        sqrt(p * (1 - p) / total_weighted_n) * 100
+      })
+      
+      tibble(
+        vote_status = vote_status,
+        pct = pct,
+        se = se
+      )
+    })
+    
+    # Calculate overall percentage
+    subset_design <- subset(svy_design, !is.na(get(var)) & get(var) == level_val)
+    weighted_n <- sum(weights(subset_design))
+    total_weighted_n <- sum(weights(svy_design))
+    overall_pct <- 100 * weighted_n / total_weighted_n
+    
+    # Calculate overall SE
+    overall_se <- tryCatch({
+      svy_design$is_level <- as.numeric(svy_design$variables[[var]] == level_val)
+      prop <- svymean(~is_level, design = svy_design, na.rm = TRUE)
+      100 * as.numeric(SE(prop))
+    }, error = function(e) {
+      # If error, calculate SE using the formula for a proportion
+      p <- weighted_n / total_weighted_n
+      sqrt(p * (1 - p) / total_weighted_n) * 100
+    })
+    
+    tibble(
+      Category = as.character(level_val),
+      `N` = format(unweighted_n, big.mark = ","),
+      `N (Wtd.)` = format(round(weighted_n, 1), big.mark = ","),
+      `% (SE)` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
+      `Trump Voter` = sprintf("%.1f (%.1f)", 
+        vote_status_percents$pct[vote_status_percents$vote_status == "Trump Voter"],
+        vote_status_percents$se[vote_status_percents$vote_status == "Trump Voter"]),
+      `New Trump Voter` = sprintf("%.1f (%.1f)", 
+        vote_status_percents$pct[vote_status_percents$vote_status == "New Trump Voter"],
+        vote_status_percents$se[vote_status_percents$vote_status == "New Trump Voter"]),
+      `Biden/Harris Voter` = sprintf("%.1f (%.1f)", 
+        vote_status_percents$pct[vote_status_percents$vote_status == "Biden/Harris Voter"],
+        vote_status_percents$se[vote_status_percents$vote_status == "Biden/Harris Voter"]),
+      `New Harris Voter` = sprintf("%.1f (%.1f)", 
+        vote_status_percents$pct[vote_status_percents$vote_status == "New Harris Voter"],
+        vote_status_percents$se[vote_status_percents$vote_status == "New Harris Voter"])
+    )
+  })
+  
+  bind_rows(header_row, category_rows)
+})
+
+# Add total counts to the table
+demographics_table <- bind_rows(
+  total_rows,
+  demographics_table
+)
+
+# Display the table with kable formatting
+demographics_table |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  add_header_above(c(" " = 1, "All" = 3, "Weighted Estimates: % (SE)" = 4)) |>
+  row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
+```

@@ -49,10 +49,10 @@ The analysis is split into five files. While the reports are numbered, the only 
    - Uses pre-processed data from step 1
    - Analyzes differences between party groups:
      - Democrat vs. Republican (baseline comparison)
-     - New Republican vs. Democrat (switchers to Trump)
-     - New Democrat vs. Democrat (switchers to Harris)
-     - New Republican vs. Republican (Trump consistency)
-     - New Democrat vs. Republican (cross-party comparison)
+     - New Trump Voter vs. Biden/Harris Voter (switchers to Trump)
+     - New Harris Voter vs. Biden/Harris Voter (switchers to Harris)
+     - New Trump Voter vs. Trump Voter (Trump consistency)
+     - New Harris Voter vs. Trump Voter (cross-party comparison)
    - Uses weighted logistic regression with multiple testing corrections:
      - Bonferroni (most conservative)
      - Holm (less conservative)

@@ -51,11 +51,11 @@ process_survey_questions <- function(
   grouping_var,
   non_responses = c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
   pairwise_comparisons = list(
-    c("Democrat", "Republican"),
-    c("New Republican", "Democrat"),
-    c("New Democrat", "Democrat"),
-    c("New Republican", "Republican"),
-    c("New Democrat", "Republican")
+    c("Biden/Harris Voter", "Trump Voter"),
+    c("New Harris Voter", "Biden/Harris Voter"),
+    c("New Trump Voter", "Biden/Harris Voter"),
+    c("New Trump Voter", "Trump Voter"),
+    c("New Harris Voter", "Trump Voter")
   )
 ) {
     results_list <- list()
@@ -133,12 +133,12 @@ process_survey_questions <- function(
           subset_df <- subset_data$variables
           
           # Determine the reference category dynamically
-          reference_category <- if (all(c("Democrat", "Republican") %in% pair)) {
-            "Republican"  # If both are present, use "Republican"
-          } else if ("Democrat" %in% pair) {
-            "Democrat"  # If only Democrat is present, use "Democrat"
+          reference_category <- if (all(c("Biden/Harris Voter", "Trump Voter") %in% pair)) {
+            "Trump Voter"  # If both are present, use "Trump Voter"
+          } else if ("Biden/Harris Voter" %in% pair) {
+            "Biden/Harris Voter"  # If only Biden/Harris Voter is present, use "Biden/Harris Voter"
           } else {
-            "Republican"  # Default to Republican
+            "Trump Voter"  # Default to Trump Voter
           }
           
           # Ensure the variable is a factor with the correct reference category
@@ -387,11 +387,11 @@ I have opted for the following approach:
 
 1. Compare the most affirmative responses to the rest. E.g., Strongly Agree/Agree vs. Other.   This allows us a 1/0 response variable.  We can change the binning if we want.
 2. Examine five comparisons:
-   - Democrat vs. Republican
-   - Democrat vs. New Democrat
-   - Democrat vs. New Republican
-   - Republican vs. New Democrat
-   - Republican vs. New Republican
+   - Biden/Harris Voter vs. Trump Voter
+   - New Harris Voter vs. Biden/Harris Voter
+   - New Trump Voter vs. Biden/Harris Voter
+   - New Trump Voter vs. Trump Voter
+   - New Harris Voter vs. Trump Voter
 3. Correct for multiple testing using Bonferroni, Holm, and FDR methods. Some of these methods are more conservative than others.  I reported all of them. We should choose one method to report.
 4. Subset the data to the groups we care about.
 5. Run a survey-weighted logistic regression for each comparison. We are using the `svyglm` function from the `survey` package. 
@@ -411,11 +411,11 @@ Each method has different levels of conservativeness in controlling for Type I e
 
 If there is a positive log-odds ratio (or odds ratio > 1), the first group is more likely to respond affirmatively to the question than the second group. For example:
 
-If the odds ratio for "Democrat vs. Republican" comparison on the question "We're interested in what you think are important health issues facing the nation. Please assess how important each of the following is: [Life Expectancy]" is 0.61, then the odds of democrats responding affirmatively to the question are 0.61 times the odds of republicans responding affirmatively.
+If the odds ratio for "Biden/Harris Voter vs. Trump Voter" comparison on the question "We're interested in what you think are important health issues facing the nation. Please assess how important each of the following is: [Life Expectancy]" is 0.61, then the odds of Biden/Harris Voters responding affirmatively to the question are 0.61 times the odds of Trump Voters responding affirmatively.
 
 ## Results Overview
 
-The four party groups here are: Democrat, Republican, New Democrat, New Republican.
+The four party groups here are: Biden/Harris Voter, Trump Voter, New Harris Voter, New Trump Voter.
 
 ```{r combine_analyses, echo=FALSE, warning=FALSE, message=FALSE}
 # Define all JHU blocks
@@ -459,25 +459,24 @@ no_diff |> select(Topic) |> unique() |> kable(caption = "Questions with no stati
 
 We tested the following comparisons:
 
-* Democrat vs. Republican
-* New Republican vs. Democrat
-* New Democrat vs. Democrat
-* New Republican vs. Republican
-* New Democrat vs. Republican
+* New Trump Voter vs. Biden/Harris Voter
+* New Harris Voter vs. Biden/Harris Voter
+* New Trump Voter vs. Trump Voter
+* New Harris Voter vs. Trump Voter
 
 We did this by filtering on those groups and running a weighted logistic regression. We then corrected for multiple testing using no correction for multiple comparisons, Bonferroni, Holm, and FDR methods. 
 
 For each comparison, we present results using different multiple testing correction methods:
 
-#### Democrat vs. Republican
+#### New Trump Voter vs. Biden/Harris Voter
 
 ::: {.panel-tabset}
 
 ##### Bonferroni
 
 ```{r echo=FALSE, results='asis'}
-# Filter results for Democrat vs. Republican
-results <- pw_results |> filter(Comparison == "Democrat vs. Republican")
+# Filter results for New Trump Voter vs. Biden/Harris Voter
+results <- pw_results |> filter(Comparison == "New Trump Voter vs. Biden/Harris Voter")
 
 # Show Bonferroni results
 sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
@@ -574,15 +573,15 @@ if (nrow(sig_results) > 0) {
 
 :::
 
-#### New Republican vs. Democrat
+#### New Harris Voter vs. Biden/Harris Voter
 
 ::: {.panel-tabset}
 
 ##### Bonferroni
 
 ```{r echo=FALSE, results='asis'}
-# Filter results for New Republican vs. Democrat
-results <- pw_results |> filter(Comparison == "New Republican vs. Democrat")
+# Filter results for New Harris Voter vs. Biden/Harris Voter
+results <- pw_results |> filter(Comparison == "New Harris Voter vs. Biden/Harris Voter")
 
 # Show Bonferroni results
 sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
@@ -679,15 +678,15 @@ if (nrow(sig_results) > 0) {
 
 :::
 
-#### New Democrat vs. Democrat
+#### New Trump Voter vs. Trump Voter
 
 ::: {.panel-tabset}
 
 ##### Bonferroni
 
 ```{r echo=FALSE, results='asis'}
-# Filter results for New Democrat vs. Democrat
-results <- pw_results |> filter(Comparison == "New Democrat vs. Democrat")
+# Filter results for New Trump Voter vs. Trump Voter
+results <- pw_results |> filter(Comparison == "New Trump Voter vs. Trump Voter")
 
 # Show Bonferroni results
 sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
@@ -784,120 +783,15 @@ if (nrow(sig_results) > 0) {
 
 :::
 
-#### New Republican vs. Republican
+#### New Harris Voter vs. Trump Voter
 
 ::: {.panel-tabset}
 
 ##### Bonferroni
 
 ```{r echo=FALSE, results='asis'}
-# Filter results for New Republican vs. Republican
-results <- pw_results |> filter(Comparison == "New Republican vs. Republican")
-
-# Show Bonferroni results
-sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
-if (nrow(sig_results) > 0) {
-  sig_results |> 
-    mutate(
-      `Corrected P-Value` = `P-Value (Bonferroni)`
-    ) |>
-    select(
-      Question, 
-      Topic, 
-      `Estimate (Log-OR)`, 
-      `Odds Ratio (OR)`, 
-      `Raw P-Value` = `P-Value`,
-      `Corrected P-Value`
-    ) |> 
-    knitr::kable(format = "markdown")
-} else {
-  cat("_No significant results_\n")
-}
-```
-
-##### Holm
-
-```{r echo=FALSE, results='asis'}
-# Show Holm results
-sig_results <- results |> filter(`Holm Adjusted Significant?` == "Yes")
-if (nrow(sig_results) > 0) {
-  sig_results |> 
-    mutate(
-      `Corrected P-Value` = `P-Value (Holm)`
-    ) |>
-    select(
-      Question, 
-      Topic, 
-      `Estimate (Log-OR)`, 
-      `Odds Ratio (OR)`, 
-      `Raw P-Value` = `P-Value`,
-      `Corrected P-Value`
-    ) |> 
-    knitr::kable(format = "markdown")
-} else {
-  cat("_No significant results_\n")
-}
-```
-
-##### FDR
-
-```{r echo=FALSE, results='asis'}
-# Show FDR results
-sig_results <- results |> filter(`FDR Adjusted Significant?` == "Yes")
-if (nrow(sig_results) > 0) {
-  sig_results |> 
-    mutate(
-      `Corrected P-Value` = `P-Value (FDR)`
-    ) |>
-    select(
-      Question, 
-      Topic, 
-      `Estimate (Log-OR)`, 
-      `Odds Ratio (OR)`, 
-      `Raw P-Value` = `P-Value`,
-      `Corrected P-Value`
-    ) |> 
-    knitr::kable(format = "markdown")
-} else {
-  cat("_No significant results_\n")
-}
-```
-
-##### No Correction
-
-```{r echo=FALSE, results='asis'}
-# Show uncorrected results
-sig_results <- results |> filter(`Significant?` == "Yes")
-if (nrow(sig_results) > 0) {
-  sig_results |> 
-    mutate(
-      `Corrected P-Value` = `P-Value`
-    ) |>
-    select(
-      Question, 
-      Topic, 
-      `Estimate (Log-OR)`, 
-      `Odds Ratio (OR)`, 
-      `Raw P-Value` = `P-Value`,
-      `Corrected P-Value`
-    ) |> 
-    knitr::kable(format = "markdown")
-} else {
-  cat("_No significant results_\n")
-}
-```
-
-:::
-
-#### New Democrat vs. Republican
-
-::: {.panel-tabset}
-
-##### Bonferroni
-
-```{r echo=FALSE, results='asis'}
-# Filter results for New Democrat vs. Republican
-results <- pw_results |> filter(Comparison == "New Democrat vs. Republican")
+# Filter results for New Harris Voter vs. Trump Voter
+results <- pw_results |> filter(Comparison == "New Harris Voter vs. Trump Voter")
 
 # Show Bonferroni results
 sig_results <- results |> filter(`Bonferroni Adjusted Significant?` == "Yes")
