@@ -254,7 +254,13 @@ demographics_table_no_se |>
 
 ## Table 2. Vaccine-Related Questions
 
-```{r table_2, echo=FALSE, message=FALSE, warning=FALSE}
+::: {.panel-tabset}
+#### Full Table with SEs
+```{r table_2_full}
+#| echo: false
+#| warning: false
+#| message: false
+
 # Define vaccine-related variables
 vaccine_vars <- c(
   "JHU7_9",  # Vaccines as election issue
@@ -295,6 +301,7 @@ table_2 <- map_dfr(vaccine_vars, function(var) {
   # Topic header
   header_row <- tibble(
     Response = topic,
+    `All %` = "",
     `New Trump Voter %` = "",
     `Trump Voter %` = "",
     `New Harris Voter %` = "",
@@ -325,6 +332,12 @@ table_2 <- map_dfr(vaccine_vars, function(var) {
     
     temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
     
+    # Calculate overall percentage
+    overall_prop <- svymean(~temp, design = temp_design, na.rm = TRUE)
+    overall_pct <- 100 * as.numeric(overall_prop)
+    overall_se <- 100 * as.numeric(SE(overall_prop))
+    
+    # Calculate party-specific percentages
     prop_result <- svyby(
       ~temp,
       ~party_switch_analysis,
@@ -348,6 +361,7 @@ table_2 <- map_dfr(vaccine_vars, function(var) {
     
     tibble(
       Response = response,
+      `All %` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
       `New Trump Voter %` = prop_df$formatted[prop_df$group == "New Trump Voter"],
       `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
       `New Harris Voter %` = prop_df$formatted[prop_df$group == "New Harris Voter"],
@@ -363,8 +377,68 @@ table_2 |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
                 full_width = TRUE,
                 html_font = "Arial") |>
-  add_header_above(c(" " = 1, "Weighted Estimates: % (SE)" = 4)) |>
-  column_spec(1, width = "60%") |>
+  add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: % (SE)" = 4)) |>
+  column_spec(1, width = "50%") |>
+  column_spec(2:6, width = "10%") |>
+  column_spec(2:6, extra_css = "white-space: nowrap; overflow: hidden;")
+```
+
+#### Without New Harris Voter
+```{r table_2_no_new_harris}
+#| echo: false
+#| warning: false
+#| message: false
+
+table_2 |> 
+  select(-`New Harris Voter %`) |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: % (SE)" = 3)) |>
+  column_spec(1, width = "50%") |>
   column_spec(2:5, width = "10%") |>
   column_spec(2:5, extra_css = "white-space: nowrap; overflow: hidden;")
 ```
+
+#### Without Standard Errors
+```{r table_2_no_se}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create a version without standard errors
+table_2_no_se <- table_2 |>
+  mutate(across(c(`All %`, `New Trump Voter %`, `Trump Voter %`, `New Harris Voter %`, `Biden/Harris Voter %`),
+                ~str_replace(., "\\([0-9.]+\\).*$", "")))
+
+table_2_no_se |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: %" = 4)) |>
+  column_spec(1, width = "50%") |>
+  column_spec(2:6, width = "10%") |>
+  column_spec(2:6, extra_css = "white-space: nowrap; overflow: hidden;")
+```
+
+#### Without SEs and New Harris
+```{r table_2_no_se_no_new_harris}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create a version without standard errors and without New Harris Voter
+table_2_no_se |> 
+  select(-`New Harris Voter %`) |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: %" = 3)) |>
+  column_spec(1, width = "50%") |>
+  column_spec(2:5, width = "10%") |>
+  column_spec(2:5, extra_css = "white-space: nowrap; overflow: hidden;")
+```
+:::
