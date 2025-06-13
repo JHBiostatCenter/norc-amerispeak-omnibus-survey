@@ -212,7 +212,8 @@ table_1 <- map_dfr(vaccine_vars, function(var) {
   }
 })
 
-table_1 |> 
+
+table_1|> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
                 full_width = TRUE,
@@ -501,3 +502,26 @@ demographics_table_no_se |>
   row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
 ```
 :::
+
+## Save Tables for Word Document
+
+```{r save_tables}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create data directory if it doesn't exist
+dir.create("data", showWarnings = FALSE)
+
+# Save Table 1 (without New Harris Voter, with SEs)
+table_1_no_harris <- table_1 |> 
+  select(-`New Harris Voter %`)
+
+# Save Appendix Table 2 (without New Harris Voter)
+appendix_table_2_no_harris <- demographics_table |> 
+  select(-`New Harris Voter`)
+
+# Save to RDS files
+saveRDS(table_1_no_harris, "data/table_1.rds")
+saveRDS(appendix_table_2_no_harris, "data/appendix_table_2.rds")
+```
