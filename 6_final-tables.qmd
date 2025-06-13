@@ -18,6 +18,8 @@ execute:
   warning: false
   message: false
   cache: false
+editor:
+  render-on-save: true
 ---
 
 ```{r setup}
@@ -40,7 +42,18 @@ source("project-setup.R")
 
 # Define vaccine-related variables
 vaccine_vars <- c(
-  "JHU7_9",  # Vaccines as election issue
+  "JHU7_1",  # Health care
+  "JHU7_2",  # Foreign policy
+  "JHU7_3",  # Democracy
+  "JHU7_4",  # Inflation
+  "JHU7_5",  # Immigration
+  "JHU7_6",  # Crime
+  "JHU7_7",  # Jobs
+  "JHU7_8",  # Abortion
+  "JHU7_9",  # Vaccines
+  "JHU7_10", # Poverty
+  "JHU7_11", # Inequality
+  "JHU7_12", # Education
   "JHU5A",   # Continue government support for vaccines
   "JHU6C"    # Removing school vaccination requirements
 )
@@ -64,48 +77,44 @@ table_1 <- map_dfr(vaccine_vars, function(var) {
   
   temp_design_all <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data_all)
   
-  # Special handling for JHU7_9
-  if (var == "JHU7_9") {
-    topic <- "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>"
+  # Special handling for headers
+  if (var == "JHU7_1") {
+    # Only add the election issues header for the first JHU7 question
+    header_row <- tibble(
+      Response = "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>",
+      `All %` = "",
+      `New Trump Voter %` = "",
+      `Trump Voter %` = "",
+      `New Harris Voter %` = "",
+      `Biden/Harris Voter %` = ""
+    )
   } else if (var == "JHU5A") {
-    topic <- "<strong>Here is a list of specific policy goals. To what extent would you support or oppose them?</strong><br><em>Continue government support for research and development of new vaccines</em>"
+    header_row <- tibble(
+      Response = "<strong>Here is a list of specific policy goals. To what extent would you support or oppose them?</strong><br><em>Continue government support for research and development of new vaccines</em>",
+      `All %` = "",
+      `New Trump Voter %` = "",
+      `Trump Voter %` = "",
+      `New Harris Voter %` = "",
+      `Biden/Harris Voter %` = ""
+    )
   } else if (var == "JHU6C") {
-    topic <- "<em>Removing school vaccination requirements</em>"
+    header_row <- tibble(
+      Response = "<em>Removing school vaccination requirements</em>",
+      `All %` = "",
+      `New Trump Voter %` = "",
+      `Trump Voter %` = "",
+      `New Harris Voter %` = "",
+      `Biden/Harris Voter %` = ""
+    )
   } else {
-    topic <- meta_vaccine |> filter(var == !!var) |> pull(topic)
+    header_row <- NULL
   }
   
-  # Topic header
-  header_row <- tibble(
-    Response = topic,
-    `All %` = "",
-    `New Trump Voter %` = "",
-    `Trump Voter %` = "",
-    `New Harris Voter %` = "",
-    `Biden/Harris Voter %` = ""
-  )
-  
-  # Get response categories
-  responses <- levels(droplevels(factor(data[[var]])))
-  responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
-  
-  # For JHU7_9, only keep "Yes" but change the label
-  if (var == "JHU7_9") {
-    responses <- "<em>Vaccines</em> [selected as 1 of 3]"
-  }
-  
-  # Response-level rows
-  category_rows <- map_dfr(responses, function(response) {
+  # For JHU7 questions, we only want "Yes" responses
+  if (str_starts(var, "JHU7_")) {
     temp_data <- data |> 
       filter(!is.na(get(var)), !is.na(party_switch_analysis)) |> 
-      mutate(temp = ifelse(
-        # Special handling for JHU7_9 to look for "Yes" responses
-        if (var == "JHU7_9") {
-          as.character(get(var)) == "Yes"
-        } else {
-          as.character(get(var)) == response
-        },
-        1, 0))
+      mutate(temp = ifelse(as.character(get(var)) == "Yes", 1, 0))
     
     temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
     
@@ -136,17 +145,71 @@ table_1 <- map_dfr(vaccine_vars, function(var) {
         formatted = sprintf("%.1f (%.1f)", pct, se)
       )
     
-    tibble(
-      Response = response,
+    # Create response row with the correct topic
+    topic <- meta_vaccine |> filter(var == !!var) |> pull(topic)
+    response_row <- tibble(
+      Response = ifelse(var == "JHU7_9", "<strong>Vaccines</strong>", topic),
       `All %` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
       `New Trump Voter %` = prop_df$formatted[prop_df$group == "New Trump Voter"],
       `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
       `New Harris Voter %` = prop_df$formatted[prop_df$group == "New Harris Voter"],
       `Biden/Harris Voter %` = prop_df$formatted[prop_df$group == "Biden/Harris Voter"]
     )
-  })
-  
-  bind_rows(header_row, category_rows)
+    
+    if (!is.null(header_row)) {
+      bind_rows(header_row, response_row)
+    } else {
+      response_row
+    }
+  } else {
+    # Original handling for JHU5A and JHU6C
+    responses <- levels(droplevels(factor(data[[var]])))
+    responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+    
+    category_rows <- map_dfr(responses, function(response) {
+      temp_data <- data |> 
+        filter(!is.na(get(var)), !is.na(party_switch_analysis)) |> 
+        mutate(temp = ifelse(as.character(get(var)) == response, 1, 0))
+      
+      temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+      
+      overall_prop <- svymean(~temp, design = temp_design, na.rm = TRUE)
+      overall_pct <- 100 * as.numeric(overall_prop)
+      overall_se <- 100 * as.numeric(SE(overall_prop))
+      
+      prop_result <- svyby(
+        ~temp,
+        ~party_switch_analysis,
+        design = temp_design,
+        svymean,
+        na.rm = TRUE,
+        drop.empty.groups = FALSE
+      )
+      
+      prop_df <- tibble(
+        group = prop_result$party_switch_analysis,
+        pct = 100 * as.numeric(prop_result$temp),
+        se = 100 * as.numeric(SE(prop_result))
+      ) |>
+        right_join(tibble(group = party_levels), by = "group") |>
+        mutate(
+          pct = ifelse(is.na(pct), 0, pct),
+          se = ifelse(is.na(se), 0, se),
+          formatted = sprintf("%.1f (%.1f)", pct, se)
+        )
+      
+      tibble(
+        Response = response,
+        `All %` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
+        `New Trump Voter %` = prop_df$formatted[prop_df$group == "New Trump Voter"],
+        `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
+        `New Harris Voter %` = prop_df$formatted[prop_df$group == "New Harris Voter"],
+        `Biden/Harris Voter %` = prop_df$formatted[prop_df$group == "Biden/Harris Voter"]
+      )
+    })
+    
+    bind_rows(header_row, category_rows)
+  }
 })
 
 table_1 |> 
