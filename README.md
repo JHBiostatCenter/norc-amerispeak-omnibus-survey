@@ -26,6 +26,7 @@ To set up the project:
 2. Source `r-setup.R` to initialize renv and install required packages
 3. Source `project-setup.R` to load packages and utility files
 4. Run `Rscript render-quarto-notebooks.R` to compile all analysis notebooks
+5. Run `7_render_tables.R` to take the final produced tables and convert them into Word documents.
 
 The `renv.lock` file records the exact package versions used in this analysis to ensure reproducibility.
 
@@ -77,12 +78,19 @@ The analysis is split into five files. While the reports are numbered, the only 
 
 ### Analysis Notebooks
 
-```1_norc-data-tabulation.qmd      # Initial data processing and tabulation
+```
+1_norc-data-tabulation.qmd      # Initial data processing and tabulation
 2_norc-report-generation.qmd    # Main report generation
 3_paper-artifact-creation.qmd   # Visualizations and analyses
 4_statistical-tests.qmd         # Party difference analysis
 5_table-generation.qmd          # Draft tables
 6_final-tables.qmd              # Final publication tables
+```
+
+### Utility Scripts
+
+```
+7_render_tables.R               # Script to convert final tables into Word Documents
 ```
 
 ### Setup & Configuration

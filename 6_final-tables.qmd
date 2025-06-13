@@ -284,6 +284,120 @@ table_1_no_se |>
 ```
 :::
 
+## Table 2. Education vs. Vaccine Questions
+
+```{r table_2_education_vaccine}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define vaccine-related variables
+ed_vaccine_vars <- c(
+  "JHU5A",   # Continue government support for vaccines
+  "JHU6C"    # Removing school vaccination requirements
+)
+
+# Create survey design
+svy_design <- svydesign(
+  ids = ~1, 
+  weights = ~WEIGHT_EN, 
+  data = data,
+  na.action = na.omit
+)
+
+# Function to create cross-tab for a single variable
+create_ed_vaccine_crosstab <- function(var, question_text) {
+  # Get all response categories for this variable
+  responses <- levels(droplevels(factor(data[[var]])))
+  responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+  
+  # Get education levels in original order
+  ed_levels <- levels(droplevels(factor(data$education_cat)))
+  
+  # Create header row
+  header_row <- tibble(
+    Response = question_text
+  )
+  # Add empty columns for each education level
+  for (ed in ed_levels) {
+    header_row[[ed]] <- ""
+  }
+  
+  # Create rows for each response category
+  response_rows <- map_dfr(responses, function(response) {
+    # Calculate percentages for each education level within this response
+    ed_percents <- map_dfr(ed_levels, function(ed_level) {
+      # Subset design for this education level
+      ed_design <- subset(svy_design, education_cat == ed_level)
+      
+      # Calculate percentage for this response
+      subset_design <- subset(ed_design, !is.na(get(var)) & get(var) == response)
+      
+      # Get weighted N for this response within this education level
+      weighted_n <- sum(weights(subset_design))
+      
+      # Get total weighted N for this education level
+      total_weighted_n <- sum(weights(ed_design))
+      
+      # Calculate percentage
+      pct <- 100 * weighted_n / total_weighted_n
+      
+      # Calculate SE
+      se <- tryCatch({
+        ed_design$is_response <- as.numeric(ed_design$variables[[var]] == response)
+        prop <- svymean(~is_response, design = ed_design, na.rm = TRUE)
+        100 * as.numeric(SE(prop))
+      }, error = function(e) {
+        p <- weighted_n / total_weighted_n
+        sqrt(p * (1 - p) / total_weighted_n) * 100
+      })
+      
+      tibble(
+        ed_level = ed_level,
+        pct = pct,
+        se = se
+      )
+    })
+    
+    # Create row with response and percentages
+    row_data <- tibble(Response = response)
+    for (ed in ed_levels) {
+      row_data[[ed]] <- sprintf("%.1f (%.1f)", 
+        ed_percents$pct[ed_percents$ed_level == ed],
+        ed_percents$se[ed_percents$ed_level == ed])
+    }
+    
+    row_data
+  })
+  
+  bind_rows(header_row, response_rows)
+}
+
+# Create tables for each vaccine variable
+table_2_1 <- create_ed_vaccine_crosstab(
+  "JHU5A",
+  "<strong>Continue government support for research and development of new vaccines</strong>"
+)
+
+table_2_2 <- create_ed_vaccine_crosstab(
+  "JHU6C",
+  "<strong>Removing school vaccination requirements</strong>"
+)
+
+# Combine tables
+table_2_combined <- bind_rows(table_2_1, table_2_2)
+
+# Display the table
+table_2_combined |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(table_2_combined), width = paste0(70/(ncol(table_2_combined)-1), "%")) |>
+  row_spec(which(str_detect(table_2_combined$Response, "<strong>")), bold = TRUE)
+```
+
 
 ## Appendix Table 2. Demographics
 
@@ -505,6 +619,8 @@ demographics_table_no_se |>
 
 ## Save Tables for Word Document
 
+RDS files are saved in the `output` directory.
+
 ```{r save_tables}
 #| echo: false
 #| warning: false
@@ -518,10 +634,15 @@ table_1_no_harris <- table_1 |>
   select(-`New Harris Voter %`)
 
 # Save Appendix Table 2 (without New Harris Voter)
-appendix_table_2_no_harris <- demographics_table |> 
+appendix_demographics_table_no_harris <- demographics_table |> 
   select(-`New Harris Voter`)
 
+if(!dir.exists("output")) {
+  dir.create("output")
+}
+
 # Save to RDS files
-saveRDS(table_1_no_harris, "data/table_1.rds")
-saveRDS(appendix_table_2_no_harris, "data/appendix_table_2.rds")
+saveRDS(table_1_no_harris, "output/table_1.rds")
+saveRDS(table_2_combined, "output/table_2.rds")
+saveRDS(appendix_demographics_table_no_harris, "output/appendix_demographics_table.rds")
 ```
