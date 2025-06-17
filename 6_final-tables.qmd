@@ -90,7 +90,7 @@ table_1 <- map_dfr(vaccine_vars, function(var) {
     )
   } else if (var == "JHU5A") {
     header_row <- tibble(
-      Response = "<strong>Here is a list of specific policy goals. To what extent would you support or oppose them?</strong><br><em>Continue government support for research and development of new vaccines</em>",
+      Response = "<strong>Here is a list of specific policy goals. To what extent would you support or oppose them?</strong><br><em>Continue government support for safe and effective vaccines</em>",
       `All %` = "",
       `New Trump Voter %` = "",
       `Trump Voter %` = "",
@@ -99,7 +99,7 @@ table_1 <- map_dfr(vaccine_vars, function(var) {
     )
   } else if (var == "JHU6C") {
     header_row <- tibble(
-      Response = "<em>Removing school vaccination requirements</em>",
+      Response = "<em>Removing school vaccination requirements for children</em>",
       `All %` = "",
       `New Trump Voter %` = "",
       `Trump Voter %` = "",
@@ -293,6 +293,7 @@ table_1_no_se |>
 
 # Define vaccine-related variables
 ed_vaccine_vars <- c(
+  "JHU7_9",  # Vaccines as important election issue
   "JHU5A",   # Continue government support for vaccines
   "JHU6C"    # Removing school vaccination requirements
 )
@@ -310,6 +311,11 @@ create_ed_vaccine_crosstab <- function(var, question_text) {
   # Get all response categories for this variable
   responses <- levels(droplevels(factor(data[[var]])))
   responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+  
+  # For JHU7_9, only show "Yes" responses and rename to "Vaccines"
+  if (var == "JHU7_9") {
+    responses <- responses[responses == "Yes"]
+  }
   
   # Get education levels in original order
   ed_levels <- levels(droplevels(factor(data$education_cat)))
@@ -360,7 +366,9 @@ create_ed_vaccine_crosstab <- function(var, question_text) {
     })
     
     # Create row with response and percentages
-    row_data <- tibble(Response = response)
+    # For JHU7_9, change "Yes" to "Vaccines"
+    display_response <- ifelse(var == "JHU7_9" & response == "Yes", "Vaccines", response)
+    row_data <- tibble(Response = display_response)
     for (ed in ed_levels) {
       row_data[[ed]] <- sprintf("%.1f (%.1f)", 
         ed_percents$pct[ed_percents$ed_level == ed],
@@ -374,18 +382,23 @@ create_ed_vaccine_crosstab <- function(var, question_text) {
 }
 
 # Create tables for each vaccine variable
+table_2_0 <- create_ed_vaccine_crosstab(
+  "JHU7_9",
+  "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>"
+)
+
 table_2_1 <- create_ed_vaccine_crosstab(
   "JHU5A",
-  "<strong>Continue government support for research and development of new vaccines</strong>"
+  "<strong>Continue government support for safe and effective vaccines</strong>"
 )
 
 table_2_2 <- create_ed_vaccine_crosstab(
   "JHU6C",
-  "<strong>Removing school vaccination requirements</strong>"
+  "<strong>Removing school vaccination requirements for children</strong>"
 )
 
 # Combine tables
-table_2_combined <- bind_rows(table_2_1, table_2_2)
+table_2_combined <- bind_rows(table_2_0, table_2_1, table_2_2)
 
 # Display the table
 table_2_combined |> 

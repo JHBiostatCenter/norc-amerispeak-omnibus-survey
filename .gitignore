@@ -41,3 +41,6 @@ raw/*
 *_cache/*
 *_files/
 *_files/*
+
+# Claude
+.claude
