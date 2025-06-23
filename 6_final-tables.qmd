@@ -630,6 +630,206 @@ demographics_table_no_se |>
 ```
 :::
 
+## Appendix 3. Demographic Cross-Tabulations
+
+### Appendix 3A. Age Cross-Tabulations
+
+```{r appendix_3a_age}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create generic cross-tabulation function for any demographic variable
+create_demographic_vaccine_crosstab <- function(demo_var, demo_var_name) {
+  # Define vaccine-related variables
+  ed_vaccine_vars <- c(
+    "JHU7_9",  # Vaccines as important election issue
+    "JHU5A",   # Continue government support for vaccines
+    "JHU6C"    # Removing school vaccination requirements
+  )
+  
+  # Create survey design
+  svy_design <- svydesign(
+    ids = ~1, 
+    weights = ~WEIGHT_EN, 
+    data = data,
+    na.action = na.omit
+  )
+  
+  # Function to create cross-tab for a single variable
+  create_single_crosstab <- function(var, question_text) {
+    # Get all response categories for this variable
+    responses <- levels(droplevels(factor(data[[var]])))
+    responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+    
+    # For JHU7_9, only show "Yes" responses and rename to "Vaccines"
+    if (var == "JHU7_9") {
+      responses <- responses[responses == "Yes"]
+    }
+    
+    # Get demographic levels in original order
+    demo_levels <- levels(droplevels(factor(data[[demo_var]])))
+    
+    # Create header row
+    header_row <- tibble(
+      Response = question_text
+    )
+    # Add empty columns for each demographic level
+    for (demo in demo_levels) {
+      header_row[[demo]] <- ""
+    }
+    
+    # Create rows for each response category
+    response_rows <- map_dfr(responses, function(response) {
+      # Calculate percentages for each demographic level within this response
+      demo_percents <- map_dfr(demo_levels, function(demo_level) {
+        # Subset design for this demographic level
+        demo_design <- subset(svy_design, get(demo_var) == demo_level)
+        
+        # Calculate percentage for this response
+        subset_design <- subset(demo_design, !is.na(get(var)) & get(var) == response)
+        
+        # Get weighted N for this response within this demographic level
+        weighted_n <- sum(weights(subset_design))
+        
+        # Get total weighted N for this demographic level
+        total_weighted_n <- sum(weights(demo_design))
+        
+        # Calculate percentage
+        pct <- 100 * weighted_n / total_weighted_n
+        
+        # Calculate SE
+        se <- tryCatch({
+          demo_design$is_response <- as.numeric(demo_design$variables[[var]] == response)
+          prop <- svymean(~is_response, design = demo_design, na.rm = TRUE)
+          100 * as.numeric(SE(prop))
+        }, error = function(e) {
+          p <- weighted_n / total_weighted_n
+          sqrt(p * (1 - p) / total_weighted_n) * 100
+        })
+        
+        tibble(
+          demo_level = demo_level,
+          pct = pct,
+          se = se
+        )
+      })
+      
+      # Create row with response and percentages
+      # For JHU7_9, change "Yes" to "Vaccines"
+      display_response <- ifelse(var == "JHU7_9" & response == "Yes", "Vaccines", response)
+      row_data <- tibble(Response = display_response)
+      for (demo in demo_levels) {
+        row_data[[demo]] <- sprintf("%.1f (%.1f)", 
+          demo_percents$pct[demo_percents$demo_level == demo],
+          demo_percents$se[demo_percents$demo_level == demo])
+      }
+      
+      row_data
+    })
+    
+    bind_rows(header_row, response_rows)
+  }
+  
+  # Create tables for each vaccine variable
+  table_1 <- create_single_crosstab(
+    "JHU7_9",
+    "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>"
+  )
+  
+  table_2 <- create_single_crosstab(
+    "JHU5A",
+    "<strong>Continue government support for safe and effective vaccines</strong>"
+  )
+  
+  table_3 <- create_single_crosstab(
+    "JHU6C",
+    "<strong>Removing school vaccination requirements for children</strong>"
+  )
+  
+  # Combine tables
+  combined_table <- bind_rows(table_1, table_2, table_3)
+  
+  return(combined_table)
+}
+
+# Create Age cross-tabulation table
+appendix_3a <- create_demographic_vaccine_crosstab("age_cat", "Age")
+
+# Display the table
+appendix_3a |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(appendix_3a), width = paste0(70/(ncol(appendix_3a)-1), "%")) |>
+  row_spec(which(str_detect(appendix_3a$Response, "<strong>")), bold = TRUE)
+```
+
+### Appendix 3B. Gender Cross-Tabulations
+
+```{r appendix_3b_gender}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create Gender cross-tabulation table
+appendix_3b <- create_demographic_vaccine_crosstab("gender_cat", "Gender")
+
+# Display the table
+appendix_3b |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(appendix_3b), width = paste0(70/(ncol(appendix_3b)-1), "%")) |>
+  row_spec(which(str_detect(appendix_3b$Response, "<strong>")), bold = TRUE)
+```
+
+### Appendix 3C. Income Cross-Tabulations
+
+```{r appendix_3c_income}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create Income cross-tabulation table
+appendix_3c <- create_demographic_vaccine_crosstab("income_cat", "Income")
+
+# Display the table
+appendix_3c |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(appendix_3c), width = paste0(70/(ncol(appendix_3c)-1), "%")) |>
+  row_spec(which(str_detect(appendix_3c$Response, "<strong>")), bold = TRUE)
+```
+
+### Appendix 3D. Race/Ethnicity Cross-Tabulations
+
+```{r appendix_3d_race}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create Race/Ethnicity cross-tabulation table
+appendix_3d <- create_demographic_vaccine_crosstab("race_eth_cat", "Race/Ethnicity")
+
+# Display the table
+appendix_3d |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE,
+                html_font = "Arial") |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(appendix_3d), width = paste0(70/(ncol(appendix_3d)-1), "%")) |>
+  row_spec(which(str_detect(appendix_3d$Response, "<strong>")), bold = TRUE)
+```
+
 ## Save Tables for Word Document
 
 RDS files are saved in the `output` directory.
@@ -658,4 +858,8 @@ if(!dir.exists("output")) {
 saveRDS(table_1_no_harris, "output/table_1.rds")
 saveRDS(table_2_combined, "output/table_2.rds")
 saveRDS(appendix_demographics_table_no_harris, "output/appendix_demographics_table.rds")
+saveRDS(appendix_3a, "output/appendix_3a_age.rds")
+saveRDS(appendix_3b, "output/appendix_3b_gender.rds")
+saveRDS(appendix_3c, "output/appendix_3c_income.rds")
+saveRDS(appendix_3d, "output/appendix_3d_race.rds")
 ```
