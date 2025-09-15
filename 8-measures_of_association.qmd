@@ -1,0 +1,490 @@
+---
+title: "Measures of Association for Vaccine Attitudes (2024 Voters)"
+format: html
+---
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Load required packages and data
+source("project-setup.R")
+load_analysis_data()
+
+# Filter to 2024 voters only
+voters_2024 <- data |>
+  filter(
+    candidate_2024 %in% c("Kamala Harris", "Donald Trump", "Someone else")
+  )
+
+# Create survey design for 2024 voters
+svy_2024 <- svydesign(
+  ids = ~1,
+  weights = ~WEIGHT_EN,
+  data = voters_2024,
+  na.action = na.pass  # Keep NAs for debugging
+)
+
+cat("Total 2024 voters:", nrow(voters_2024), "\n")
+cat("Weighted N:", round(sum(voters_2024$WEIGHT_EN, na.rm = TRUE)), "\n\n")
+```
+
+
+## Clean All Variables
+
+```{r clean_variables}
+#| echo: false
+#| warning: false
+#| message: false
+
+cat("=== CLEANING ALL VARIABLES ===\n\n")
+
+# First, let's see what problematic values exist in outcome variables
+cat("Checking outcome variables for problematic responses:\n")
+cat("---------------------------------------------------\n")
+cat("\nJHU5A values:\n")
+print(table(voters_2024$JHU5A, useNA = "always"))
+
+cat("\nJHU6C values:\n")
+print(table(voters_2024$JHU6C, useNA = "always"))
+
+# Clean all variables by removing Unknown/NA/Don't know/Refused/Skipped
+voters_2024_clean <- voters_2024 |>
+  mutate(
+    # Clean age - remove "Under 18" and any NAs
+    age_clean = case_when(
+      !is.na(age_cat) & age_cat %in% c("18-29", "30-44", "45-59", "60+") ~ age_cat,
+      TRUE ~ NA_character_
+    ),
+
+    # Clean gender - remove "Unknown" and any NAs
+    gender_clean = case_when(
+      !is.na(gender_cat) & gender_cat == "Male" ~ "Male",
+      !is.na(gender_cat) & gender_cat == "Female" ~ "Female",
+      !is.na(GENDER) & GENDER == "Male" & (is.na(gender_cat) | gender_cat == "Unknown") ~ "Male",
+      !is.na(GENDER) & GENDER == "Female" & (is.na(gender_cat) | gender_cat == "Unknown") ~ "Female",
+      TRUE ~ NA_character_
+    ),
+
+    # Clean education - use actual values from the data and check for NA
+    education_clean = case_when(
+      !is.na(education_cat) & education_cat %in% c("Less than high school",
+                          "High school graduate or equivalent",
+                          "Some college/associates degree",
+                          "Bachelor's degree",
+                          "Postgraduate study/professional degree") ~ education_cat,
+      TRUE ~ NA_character_
+    ),
+
+    # Clean income - use actual values from the data and check for NA
+    income_clean = case_when(
+      !is.na(income_cat) & income_cat %in% c("Less than $30,000",
+                        "$30,000 to under $60,000",
+                        "$60,000 to under $100,000",
+                        "$100,000 or more") ~ income_cat,
+      TRUE ~ NA_character_
+    ),
+
+    # Clean race/ethnicity - use actual values from the data and check for NA
+    race_eth_clean = case_when(
+      !is.na(race_eth_cat) & race_eth_cat %in% c("White, non-Hispanic",
+                          "Black, non-Hispanic",
+                          "Hispanic",
+                          "Asian-Pacific Islander, non-Hispanic",
+                          "Other, non-Hispanic",
+                          "2+, non-Hispanic") ~ race_eth_cat,
+      TRUE ~ NA_character_
+    ),
+
+    # Clean JHU5A - remove DON'T KNOW, REFUSED, SKIPPED ON WEB and NAs
+    JHU5A_clean = case_when(
+      !is.na(JHU5A) & JHU5A %in% c("Strongly support", "Support", "Neither support nor oppose",
+                   "Oppose", "Strongly oppose") ~ JHU5A,
+      TRUE ~ NA_character_
+    ),
+
+    # Clean JHU6C - remove DON'T KNOW, REFUSED, SKIPPED ON WEB and NAs
+    JHU6C_clean = case_when(
+      !is.na(JHU6C) & JHU6C %in% c("Strongly support", "Support", "Neither support nor oppose",
+                   "Oppose", "Strongly oppose") ~ JHU6C,
+      TRUE ~ NA_character_
+    )
+  )
+
+# Report cleaning results
+cat("Variable cleaning results:\n")
+cat("-------------------------\n\n")
+
+vars_to_check <- list(
+  "age" = c("age_cat", "age_clean"),
+  "gender" = c("gender_cat", "gender_clean"),
+  "education" = c("education_cat", "education_clean"),
+  "income" = c("income_cat", "income_clean"),
+  "race_eth" = c("race_eth_cat", "race_eth_clean"),
+  "JHU5A" = c("JHU5A", "JHU5A_clean"),
+  "JHU6C" = c("JHU6C", "JHU6C_clean")
+)
+
+for(var_name in names(vars_to_check)) {
+  orig <- vars_to_check[[var_name]][1]
+  clean <- vars_to_check[[var_name]][2]
+
+  n_orig <- sum(!is.na(voters_2024_clean[[orig]]))
+  n_clean <- sum(!is.na(voters_2024_clean[[clean]]))
+  n_removed <- n_orig - n_clean
+
+  cat(sprintf("%s: %d original -> %d clean (removed %d Unknown/invalid)\n",
+              var_name, n_orig, n_clean, n_removed))
+}
+
+cat("\n\nCleaned variable distributions:\n")
+cat("-------------------------------\n")
+cat("Note: These show the distribution AFTER setting invalid responses to NA.\n")
+cat("The Cramér's V calculation will exclude all NA rows.\n\n")
+
+cat("Age (cleaned):\n")
+age_table <- table(voters_2024_clean$age_clean)
+print(age_table)
+if(any(is.na(voters_2024_clean$age_clean))) {
+  cat(sprintf("  [%d NA values will be excluded from calculations]\n", sum(is.na(voters_2024_clean$age_clean))))
+}
+cat("\n")
+
+cat("Gender (cleaned):\n")
+gender_table <- table(voters_2024_clean$gender_clean)
+print(gender_table)
+if(any(is.na(voters_2024_clean$gender_clean))) {
+  cat(sprintf("  [%d NA values will be excluded from calculations]\n", sum(is.na(voters_2024_clean$gender_clean))))
+}
+cat("\n")
+
+cat("Education (cleaned):\n")
+edu_table <- table(voters_2024_clean$education_clean)
+print(edu_table)
+if(any(is.na(voters_2024_clean$education_clean))) {
+  cat(sprintf("  [%d NA values will be excluded from calculations]\n", sum(is.na(voters_2024_clean$education_clean))))
+}
+cat("\n")
+
+cat("Income (cleaned):\n")
+income_table <- table(voters_2024_clean$income_clean)
+print(income_table)
+if(any(is.na(voters_2024_clean$income_clean))) {
+  cat(sprintf("  [%d NA values will be excluded from calculations]\n", sum(is.na(voters_2024_clean$income_clean))))
+}
+cat("\n")
+
+cat("Race/Ethnicity (cleaned):\n")
+race_table <- table(voters_2024_clean$race_eth_clean)
+print(race_table)
+if(any(is.na(voters_2024_clean$race_eth_clean))) {
+  cat(sprintf("  [%d NA values will be excluded from calculations]\n", sum(is.na(voters_2024_clean$race_eth_clean))))
+}
+cat("\n")
+
+cat("JHU5A (cleaned - ONLY valid Likert responses):\n")
+jhu5a_table <- table(voters_2024_clean$JHU5A_clean)
+print(jhu5a_table)
+if(any(is.na(voters_2024_clean$JHU5A_clean))) {
+  cat(sprintf("  [%d responses excluded (DON'T KNOW/REFUSED/SKIPPED/NA)]\n", sum(is.na(voters_2024_clean$JHU5A_clean))))
+}
+cat("\n")
+
+cat("JHU6C (cleaned - ONLY valid Likert responses):\n")
+jhu6c_table <- table(voters_2024_clean$JHU6C_clean)
+print(jhu6c_table)
+if(any(is.na(voters_2024_clean$JHU6C_clean))) {
+  cat(sprintf("  [%d responses excluded (DON'T KNOW/REFUSED/SKIPPED/NA)]\n", sum(is.na(voters_2024_clean$JHU6C_clean))))
+}
+cat("\n")
+
+# Update the main data frame
+voters_2024 <- voters_2024_clean
+```
+
+## Cramér's V Calculation Function
+
+```{r cramers_v_function}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Function to calculate weighted Cramér's V with detailed debugging
+calculate_cramers_v_debug <- function(demographic_var, outcome_var, svy_design, verbose = TRUE) {
+
+  if(verbose) {
+    cat("\n================================================\n")
+    cat(paste0("Calculating Cramér's V: ", demographic_var, " × ", outcome_var, "\n"))
+    cat("================================================\n")
+  }
+
+  tryCatch({
+    # Get the data
+    data <- svy_design$variables
+
+    # Check variables exist
+    if(!demographic_var %in% names(data)) {
+      return(list(
+        cramers_v = NA,
+        error = paste("Demographic variable not found:", demographic_var)
+      ))
+    }
+    if(!outcome_var %in% names(data)) {
+      return(list(
+        cramers_v = NA,
+        error = paste("Outcome variable not found:", outcome_var)
+      ))
+    }
+
+    # Define valid responses for each variable type
+    valid_likert <- c("Strongly support", "Support", "Neither support nor oppose",
+                      "Oppose", "Strongly oppose")
+
+    # Filter for valid responses ONLY
+    # For outcome variables (JHU5A_clean, JHU6C_clean), check if they end with "_clean"
+    # If so, they should already have NA for invalid responses
+    # Otherwise, filter for valid Likert responses
+
+    if(grepl("_clean$", outcome_var)) {
+      # For cleaned variables, just remove NAs
+      valid_idx <- !is.na(data[[demographic_var]]) & !is.na(data[[outcome_var]])
+    } else if(outcome_var %in% c("JHU5A", "JHU6C")) {
+      # For raw outcome variables, filter for valid responses only
+      valid_idx <- !is.na(data[[demographic_var]]) &
+                   data[[outcome_var]] %in% valid_likert
+    } else {
+      # For other variables, just check for non-NA
+      valid_idx <- !is.na(data[[demographic_var]]) & !is.na(data[[outcome_var]])
+    }
+
+    # Similarly for demographic variables
+    if(grepl("_clean$", demographic_var)) {
+      # Already cleaned, just ensure no NAs
+      valid_idx <- valid_idx & !is.na(data[[demographic_var]])
+    }
+
+    n_valid <- sum(valid_idx)
+
+    if(verbose) {
+      cat(paste0("Valid cases (excluding DON'T KNOW/REFUSED/SKIPPED/NA): ", n_valid, " out of ", nrow(data), "\n"))
+    }
+
+    if(n_valid < 20) {
+      return(list(
+        cramers_v = NA,
+        error = paste("Insufficient valid cases:", n_valid)
+      ))
+    }
+
+    # Create subset with valid cases only
+    data_complete <- data[valid_idx, ]
+
+    # Convert to factors and drop unused levels (including NA)
+    data_complete[[demographic_var]] <- droplevels(as.factor(data_complete[[demographic_var]]))
+    data_complete[[outcome_var]] <- droplevels(as.factor(data_complete[[outcome_var]]))
+
+    # Check unique values
+    n_demo_levels <- length(levels(data_complete[[demographic_var]]))
+    n_outcome_levels <- length(levels(data_complete[[outcome_var]]))
+
+    if(verbose) {
+      cat(paste0("Demographic levels: ", n_demo_levels, "\n"))
+      cat(paste0("Outcome levels: ", n_outcome_levels, "\n"))
+    }
+
+    # Create new survey design with complete cases
+    svy_complete <- svydesign(
+      ids = ~1,
+      weights = as.formula(paste0("~", names(data)[which(names(data) == "WEIGHT_EN")])),
+      data = data_complete,
+      na.action = na.omit
+    )
+
+    # Create formula
+    formula <- as.formula(paste0("~", demographic_var, "+", outcome_var))
+
+    # Calculate chi-square
+    if(verbose) cat("Calculating chi-square test...\n")
+
+    chisq_result <- svychisq(formula, design = svy_complete, statistic = "Chisq")
+
+    # Extract statistics
+    chi_sq <- as.numeric(chisq_result$statistic)
+    p_value <- chisq_result$p.value
+
+    if(verbose) {
+      cat(paste0("Chi-square: ", round(chi_sq, 3), "\n"))
+      cat(paste0("p-value: ", round(p_value, 4), "\n"))
+    }
+
+    # Get weighted N
+    n_weighted <- sum(weights(svy_complete))
+
+    # Get table dimensions
+    tab <- svytable(formula, design = svy_complete)
+    r <- nrow(tab)
+    c <- ncol(tab)
+
+    # Calculate Cramér's V
+    k <- min(r-1, c-1)
+    cramers_v <- sqrt(chi_sq / (n_weighted * k))
+
+    if(verbose) {
+      cat(paste0("Cramér's V: ", round(cramers_v, 3), "\n"))
+      cat(paste0("Table size: ", r, "×", c, "\n"))
+    }
+
+    # Interpretation
+    interpretation <- case_when(
+      cramers_v < 0.1 ~ "Negligible",
+      cramers_v < 0.2 ~ "Weak",
+      cramers_v < 0.3 ~ "Moderate",
+      TRUE ~ "Strong"
+    )
+
+    return(list(
+      cramers_v = cramers_v,
+      chi_sq = chi_sq,
+      p_value = p_value,
+      n = n_valid,
+      n_weighted = n_weighted,
+      table_dims = paste0(r, "×", c),
+      interpretation = interpretation,
+      error = NA
+    ))
+
+  }, error = function(e) {
+    if(verbose) {
+      cat(paste0("ERROR: ", e$message, "\n"))
+    }
+    return(list(
+      cramers_v = NA,
+      error = e$message
+    ))
+  })
+}
+```
+
+## Calculate Cramér's V
+
+```{r calculate_cramers_v}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Update survey design with cleaned data
+svy_clean <- svydesign(
+  ids = ~1,
+  weights = ~WEIGHT_EN,
+  data = voters_2024,
+  na.action = na.pass
+)
+
+# Test with cleaned categories (no Unknown/invalid values)
+demographics_to_test <- list(
+  "Age" = "age_clean",
+  "Gender" = "gender_clean",
+  "Education" = "education_clean",
+  "Income" = "income_clean",
+  "Race/Ethnicity" = "race_eth_clean"
+)
+
+outcomes_to_test <- list(
+  "Support Gov't Vaccines (JHU5A)" = "JHU5A_clean",
+  "Remove School Requirements (JHU6C)" = "JHU6C_clean"
+)
+
+results_no_collapse <- list()
+
+for(demo_name in names(demographics_to_test)) {
+  for(outcome_name in names(outcomes_to_test)) {
+    demo_var <- demographics_to_test[[demo_name]]
+    outcome_var <- outcomes_to_test[[outcome_name]]
+
+    result <- calculate_cramers_v_debug(demo_var, outcome_var, svy_clean, verbose = FALSE)
+
+    results_no_collapse[[paste0(demo_name, " × ", outcome_name)]] <- result
+  }
+}
+```
+
+
+## Summary of Results
+
+```{r summary}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create clean summary table
+summary_data <- data.frame(
+  Association = names(results_no_collapse),
+  `Cramér's V` = sapply(results_no_collapse, function(x) {
+    if(is.na(x$cramers_v)) return("—")
+    sprintf("%.3f", x$cramers_v)
+  }),
+  `p-value` = sapply(results_no_collapse, function(x) {
+    if(is.null(x$p_value) || length(x$p_value) == 0 || is.na(x$p_value)) return("—")
+    if(x$p_value < 0.001) return("<0.001")
+    sprintf("%.3f", x$p_value)
+  }),
+  stringsAsFactors = FALSE
+)
+
+# Filter out failed calculations
+summary_data <- summary_data[summary_data$`Cramér.s.V` != "—", ]
+
+if(nrow(summary_data) > 0) {
+  print(summary_data, row.names = FALSE)
+}
+
+# Save results
+saveRDS(results_no_collapse, "output/cramers_v_cleaned.rds")
+```
+
+## Results Table: Cramér's V
+
+```{r tables_by_question}
+#| echo: false
+#| warning: false
+#| message: false
+#| output: asis
+
+library(kableExtra)
+
+# Create comparison matrix
+comparison_matrix <- data.frame(
+  Demographic = unique(gsub(" × .*", "", names(results_no_collapse))),
+  stringsAsFactors = FALSE
+)
+
+# Add columns for each question
+for(q in c("Support Gov't Vaccines (JHU5A)", "Remove School Requirements (JHU6C)")) {
+  comparison_matrix[[gsub(" \\(.*\\)", "", q)]] <- sapply(comparison_matrix$Demographic, function(d) {
+    key <- paste0(d, " × ", q)
+    if(key %in% names(results_no_collapse)) {
+      result <- results_no_collapse[[key]]
+      if(!is.na(result$cramers_v)) {
+        cv_str <- sprintf("%.3f", result$cramers_v)
+        if(!is.null(result$p_value) && !is.na(result$p_value)) {
+          if(result$p_value < 0.001) cv_str <- paste0(cv_str, "***")
+          else if(result$p_value < 0.01) cv_str <- paste0(cv_str, "**")
+          else if(result$p_value < 0.05) cv_str <- paste0(cv_str, "*")
+        }
+        return(cv_str)
+      }
+    }
+    return("—")
+  })
+}
+
+matrix_display <- comparison_matrix |>
+  kable(escape = FALSE, format = "html", row.names = FALSE) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+print(matrix_display)
+
+cat("\n\n**Significance:** *** p<0.001, ** p<0.01, * p<0.05\n")
+```

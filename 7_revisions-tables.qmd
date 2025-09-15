@@ -1,0 +1,973 @@
+---
+title: "NORC AmeriSpeak Omnibus: Revised Tables (2024 Voters Only)"
+author: "Erik Westlund"
+date: "2025-09-15"
+date-modified: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format:
+  html:
+    toc: true
+    toc-float: true
+    toc-depth: 5
+    theme: cosmo
+    code-fold: true
+    fontsize: 1em
+    linestretch: 1.1
+    self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+editor:
+  render-on-save: true
+---
+
+```{r setup}
+#| include: false
+
+# Load all required packages and source utility files
+source("project-setup.R")
+
+# Filter data to 2024 voters only
+# Include anyone who voted for Trump, Harris, or Someone else in 2024
+# Exclude "Did not vote in this race" and non-responses
+voters_2024 <- data |>
+  filter(
+    candidate_2024 %in% c("Kamala Harris", "Donald Trump", "Someone else")
+  )
+
+# Create voter group variable for 2024 voters
+voters_2024 <- voters_2024 |>
+  mutate(
+    voter_group_2024 = case_when(
+      candidate_2024 == "Donald Trump" ~ "Trump Voter",
+      candidate_2024 == "Kamala Harris" ~ "Harris Voter",
+      candidate_2024 == "Someone else" ~ "Third Party",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Create survey design for 2024 voters
+svy_2024 <- svydesign(
+  ids = ~1,
+  weights = ~WEIGHT_EN,
+  data = voters_2024,
+  na.action = na.omit
+)
+
+# Display sample size
+cat("Total 2024 voters:", nrow(voters_2024), "\n")
+cat("Weighted N:", round(sum(voters_2024$WEIGHT_EN, na.rm = TRUE)), "\n")
+```
+
+## Table 1. Issues That Mattered and Policy Support by Voter Group in the 2024 Presidential Election (2024 Voters)
+
+```{r table_1}
+#| echo: false
+#| warning: false
+#| message: false
+#| output: asis
+
+# Define election issue variables
+election_vars <- c(
+  "JHU7_1",  # Health care
+  "JHU7_2",  # Foreign policy
+  "JHU7_3",  # Democracy
+  "JHU7_4",  # Inflation
+  "JHU7_5",  # Immigration
+  "JHU7_6",  # Crime
+  "JHU7_7",  # Jobs
+  "JHU7_8",  # Abortion
+  "JHU7_9",  # Vaccines
+  "JHU7_10", # Poverty
+  "JHU7_11", # Inequality
+  "JHU7_12"  # Education
+)
+
+# Filter meta for this block
+meta_vaccine <- meta |> filter(var %in% c(election_vars, "JHU5A", "JHU6C"))
+
+# Process election issues first
+election_rows <- map_dfr(election_vars, function(var) {
+  temp_data <- voters_2024 |>
+    filter(!is.na(get(var)), !is.na(voter_group_2024)) |>
+    mutate(temp = ifelse(as.character(get(var)) == "Yes", 1, 0))
+
+  temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+  # Calculate overall percentage
+  overall_prop <- svymean(~temp, design = temp_design, na.rm = TRUE)
+  overall_pct <- 100 * as.numeric(overall_prop)
+  overall_se <- 100 * as.numeric(SE(overall_prop))
+
+  # Calculate party-specific percentages
+  prop_result <- svyby(
+    ~temp,
+    ~voter_group_2024,
+    design = temp_design,
+    svymean,
+    na.rm = TRUE,
+    drop.empty.groups = FALSE
+  )
+
+  prop_df <- tibble(
+    group = prop_result$voter_group_2024,
+    pct = 100 * as.numeric(prop_result$temp),
+    se = 100 * as.numeric(SE(prop_result))
+  ) |>
+    mutate(
+      formatted = sprintf("%.1f (%.1f)", pct, se)
+    )
+
+  # Create response row with the correct topic
+  topic <- meta_vaccine |> filter(var == !!var) |> pull(topic)
+  tibble(
+    Response = ifelse(var == "JHU7_9", "<strong>Vaccines</strong>", topic),
+    `All %` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
+    `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
+    `Harris Voter %` = prop_df$formatted[prop_df$group == "Harris Voter"],
+    all_pct_numeric = overall_pct  # For sorting
+  )
+})
+
+# Sort election issues by overall percentage in descending order
+election_rows <- election_rows |>
+  arrange(desc(all_pct_numeric)) |>
+  select(-all_pct_numeric)
+
+# Add header for election issues
+election_header <- tibble(
+  Response = "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>",
+  `All %` = "",
+  `Trump Voter %` = "",
+  `Harris Voter %` = ""
+)
+
+# Process JHU5A
+jhu5a_header <- tibble(
+  Response = "<strong>Here is a list of specific policy goals. To what extent would you support or oppose them?</strong><br><em>Continue government support for safe and effective vaccines</em>",
+  `All %` = "",
+  `Trump Voter %` = "",
+  `Harris Voter %` = ""
+)
+
+responses_5a <- levels(droplevels(factor(voters_2024$JHU5A)))
+responses_5a <- responses_5a[!responses_5a %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+
+jhu5a_rows <- map_dfr(responses_5a, function(response) {
+  temp_data <- voters_2024 |>
+    filter(!is.na(JHU5A), !is.na(voter_group_2024)) |>
+    mutate(temp = ifelse(as.character(JHU5A) == response, 1, 0))
+
+  temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+  overall_prop <- svymean(~temp, design = temp_design, na.rm = TRUE)
+  overall_pct <- 100 * as.numeric(overall_prop)
+  overall_se <- 100 * as.numeric(SE(overall_prop))
+
+  prop_result <- svyby(
+    ~temp,
+    ~voter_group_2024,
+    design = temp_design,
+    svymean,
+    na.rm = TRUE,
+    drop.empty.groups = FALSE
+  )
+
+  prop_df <- tibble(
+    group = prop_result$voter_group_2024,
+    pct = 100 * as.numeric(prop_result$temp),
+    se = 100 * as.numeric(SE(prop_result))
+  ) |>
+    mutate(
+      formatted = sprintf("%.1f (%.1f)", pct, se)
+    )
+
+  tibble(
+    Response = response,
+    `All %` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
+    `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
+    `Harris Voter %` = prop_df$formatted[prop_df$group == "Harris Voter"]
+  )
+})
+
+# Process JHU6C
+jhu6c_header <- tibble(
+  Response = "<em>Removing school vaccination requirements for children</em>",
+  `All %` = "",
+  `Trump Voter %` = "",
+  `Harris Voter %` = ""
+)
+
+responses_6c <- levels(droplevels(factor(voters_2024$JHU6C)))
+responses_6c <- responses_6c[!responses_6c %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+
+jhu6c_rows <- map_dfr(responses_6c, function(response) {
+  temp_data <- voters_2024 |>
+    filter(!is.na(JHU6C), !is.na(voter_group_2024)) |>
+    mutate(temp = ifelse(as.character(JHU6C) == response, 1, 0))
+
+  temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+  overall_prop <- svymean(~temp, design = temp_design, na.rm = TRUE)
+  overall_pct <- 100 * as.numeric(overall_prop)
+  overall_se <- 100 * as.numeric(SE(overall_prop))
+
+  prop_result <- svyby(
+    ~temp,
+    ~voter_group_2024,
+    design = temp_design,
+    svymean,
+    na.rm = TRUE,
+    drop.empty.groups = FALSE
+  )
+
+  prop_df <- tibble(
+    group = prop_result$voter_group_2024,
+    pct = 100 * as.numeric(prop_result$temp),
+    se = 100 * as.numeric(SE(prop_result))
+  ) |>
+    mutate(
+      formatted = sprintf("%.1f (%.1f)", pct, se)
+    )
+
+  tibble(
+    Response = response,
+    `All %` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
+    `Trump Voter %` = prop_df$formatted[prop_df$group == "Trump Voter"],
+    `Harris Voter %` = prop_df$formatted[prop_df$group == "Harris Voter"]
+  )
+})
+
+# Combine all sections
+table_1 <- bind_rows(
+  election_header,
+  election_rows,
+  jhu5a_header,
+  jhu5a_rows,
+  jhu6c_header,
+  jhu6c_rows
+)
+
+# Display table
+table_display <- table_1 |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: % (SE)" = 2)) |>
+  column_spec(1, width = "50%") |>
+  column_spec(2:4, width = "16.7%")
+
+cat(as.character(table_display))
+
+# Save to RDS
+saveRDS(table_1, "output/revised_table_1.rds")
+```
+
+### Sample Size Information for Table 1
+
+```{r sample_sizes}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Calculate sample sizes for Table 1
+
+# For "Which issues mattered" - use all 2024 voters (they could select up to 3)
+issues_n_unweighted <- nrow(voters_2024)
+issues_n_weighted <- sum(voters_2024$WEIGHT_EN, na.rm = TRUE)
+
+# By voter group for issues
+issues_group_counts <- voters_2024 |>
+  group_by(voter_group_2024) |>
+  summarise(
+    n_unweighted = n(),
+    n_weighted = sum(WEIGHT_EN, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# For JHU5A - count only those with valid responses
+jhu5a_valid_responses <- c("Strongly support", "Support", "Neither support nor oppose",
+                           "Oppose", "Strongly oppose")
+jhu5a_data <- voters_2024 |>
+  filter(!is.na(JHU5A) & JHU5A %in% jhu5a_valid_responses)
+
+jhu5a_n_unweighted <- nrow(jhu5a_data)
+jhu5a_n_weighted <- sum(jhu5a_data$WEIGHT_EN, na.rm = TRUE)
+
+# By voter group for JHU5A
+jhu5a_group_counts <- jhu5a_data |>
+  group_by(voter_group_2024) |>
+  summarise(
+    n_unweighted = n(),
+    n_weighted = sum(WEIGHT_EN, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# For JHU6C - count only those with valid responses
+jhu6c_valid_responses <- c("Strongly support", "Support", "Neither support nor oppose",
+                           "Oppose", "Strongly oppose")
+jhu6c_data <- voters_2024 |>
+  filter(!is.na(JHU6C) & JHU6C %in% jhu6c_valid_responses)
+
+jhu6c_n_unweighted <- nrow(jhu6c_data)
+jhu6c_n_weighted <- sum(jhu6c_data$WEIGHT_EN, na.rm = TRUE)
+
+# By voter group for JHU6C
+jhu6c_group_counts <- jhu6c_data |>
+  group_by(voter_group_2024) |>
+  summarise(
+    n_unweighted = n(),
+    n_weighted = sum(WEIGHT_EN, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Display sample sizes
+cat("Sample Size Information for Table 1\n")
+cat("====================================\n\n")
+
+cat(sprintf("Which issues mattered: Unweighted N = %d, Weighted N = %.0f\n",
+            issues_n_unweighted, issues_n_weighted))
+
+cat(sprintf("Government Support for Vaccines (JHU5A): Unweighted N = %d, Weighted N = %.0f\n",
+            jhu5a_n_unweighted, jhu5a_n_weighted))
+
+cat(sprintf("Remove School Vaccine Requirements (JHU6C): Unweighted N = %d, Weighted N = %.0f\n",
+            jhu6c_n_unweighted, jhu6c_n_weighted))
+```
+
+## Table 2. Support for Vaccine-Related Policies by Educational Attainment (2024 Voters)
+
+```{r table_2}
+#| echo: false
+#| warning: false
+#| message: false
+#| output: asis
+
+# Define vaccine-related variables for education table
+ed_vaccine_vars <- c(
+  "JHU7_9",  # Vaccines as important election issue
+  "JHU5A",   # Continue government support for vaccines
+  "JHU6C"    # Removing school vaccination requirements
+)
+
+# Function to create cross-tab for a single variable (2024 voters only)
+create_ed_vaccine_crosstab_2024 <- function(var, question_text) {
+  # Get all response categories for this variable
+  responses <- levels(droplevels(factor(voters_2024[[var]])))
+  responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+
+  # For JHU7_9, only show "Yes" responses and rename to "Vaccines"
+  if (var == "JHU7_9") {
+    responses <- responses[responses == "Yes"]
+  }
+
+  # Get education levels in original order
+  ed_levels <- levels(droplevels(factor(voters_2024$education_cat)))
+
+  # Create header row
+  header_row <- tibble(
+    Response = question_text
+  )
+  # Add empty columns for each education level
+  for (ed in ed_levels) {
+    header_row[[ed]] <- ""
+  }
+
+  # Create rows for each response category
+  response_rows <- map_dfr(responses, function(response) {
+    # Calculate percentages for each education level within this response
+    ed_percents <- map_dfr(ed_levels, function(ed_level) {
+      # Subset design for this education level among 2024 voters
+      ed_design <- subset(svy_2024, education_cat == ed_level)
+
+      # Calculate percentage for this response
+      subset_design <- subset(ed_design, !is.na(get(var)) & get(var) == response)
+
+      # Get weighted N for this response within this education level
+      weighted_n <- sum(weights(subset_design))
+
+      # Get total weighted N for this education level
+      total_weighted_n <- sum(weights(ed_design))
+
+      # Calculate percentage
+      pct <- 100 * weighted_n / total_weighted_n
+
+      # Calculate SE
+      se <- tryCatch({
+        ed_design$is_response <- as.numeric(ed_design$variables[[var]] == response)
+        prop <- svymean(~is_response, design = ed_design, na.rm = TRUE)
+        100 * as.numeric(SE(prop))
+      }, error = function(e) {
+        p <- weighted_n / total_weighted_n
+        sqrt(p * (1 - p) / total_weighted_n) * 100
+      })
+
+      tibble(
+        ed_level = ed_level,
+        pct = pct,
+        se = se
+      )
+    })
+
+    # Create row with response and percentages
+    # For JHU7_9, change "Yes" to "Vaccines"
+    display_response <- ifelse(var == "JHU7_9" & response == "Yes", "Vaccines", response)
+    row_data <- tibble(Response = display_response)
+    for (ed in ed_levels) {
+      row_data[[ed]] <- sprintf("%.1f (%.1f)",
+        ed_percents$pct[ed_percents$ed_level == ed],
+        ed_percents$se[ed_percents$ed_level == ed])
+    }
+
+    row_data
+  })
+
+  bind_rows(header_row, response_rows)
+}
+
+# Create tables for each vaccine variable
+table_2_0 <- create_ed_vaccine_crosstab_2024(
+  "JHU7_9",
+  "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>"
+)
+
+table_2_1 <- create_ed_vaccine_crosstab_2024(
+  "JHU5A",
+  "<strong>Continue government support for safe and effective vaccines</strong>"
+)
+
+table_2_2 <- create_ed_vaccine_crosstab_2024(
+  "JHU6C",
+  "<strong>Removing school vaccination requirements for children</strong>"
+)
+
+# Combine tables
+table_2_combined <- bind_rows(table_2_0, table_2_1, table_2_2)
+
+# Display the table
+table_display <- table_2_combined |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(table_2_combined), width = paste0(70/(ncol(table_2_combined)-1), "%")) |>
+  row_spec(which(str_detect(table_2_combined$Response, "<strong>")), bold = TRUE)
+
+cat(as.character(table_display))
+
+# Save to RDS
+saveRDS(table_2_combined, "output/revised_table_2.rds")
+```
+
+### Sample Size Information for Table 2
+
+```{r table_2_sample_sizes}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Sample sizes for Table 2
+
+# For JHU7_9 (vaccines as election issue) - count those who answered AND have education data
+jhu7_9_ed_data <- voters_2024 |>
+  filter(!is.na(JHU7_9) & !is.na(education_cat))
+
+jhu7_9_ed_n_unweighted <- nrow(jhu7_9_ed_data)
+jhu7_9_ed_n_weighted <- sum(jhu7_9_ed_data$WEIGHT_EN, na.rm = TRUE)
+
+# For JHU5A - using valid responses only AND have education data
+jhu5a_ed_data <- voters_2024 |>
+  filter(!is.na(JHU5A) & JHU5A %in% c("Strongly support", "Support", "Neither support nor oppose",
+                                       "Oppose", "Strongly oppose") &
+         !is.na(education_cat))
+
+jhu5a_ed_n_unweighted <- nrow(jhu5a_ed_data)
+jhu5a_ed_n_weighted <- sum(jhu5a_ed_data$WEIGHT_EN, na.rm = TRUE)
+
+# For JHU6C - using valid responses only AND have education data
+jhu6c_ed_data <- voters_2024 |>
+  filter(!is.na(JHU6C) & JHU6C %in% c("Strongly support", "Support", "Neither support nor oppose",
+                                       "Oppose", "Strongly oppose") &
+         !is.na(education_cat))
+
+jhu6c_ed_n_unweighted <- nrow(jhu6c_ed_data)
+jhu6c_ed_n_weighted <- sum(jhu6c_ed_data$WEIGHT_EN, na.rm = TRUE)
+
+cat("Sample Size Information for Table 2\n")
+cat("====================================\n\n")
+
+cat(sprintf("Vaccines as Election Issue (JHU7_9): Unweighted N = %d, Weighted N = %.0f\n",
+            jhu7_9_ed_n_unweighted, jhu7_9_ed_n_weighted))
+
+cat(sprintf("Government Support for Vaccines (JHU5A): Unweighted N = %d, Weighted N = %.0f\n",
+            jhu5a_ed_n_unweighted, jhu5a_ed_n_weighted))
+
+cat(sprintf("Remove School Vaccine Requirements (JHU6C): Unweighted N = %d, Weighted N = %.0f\n",
+            jhu6c_ed_n_unweighted, jhu6c_ed_n_weighted))
+```
+
+## Supplement 2. Demographic and Political Characteristics by Vote Choice (2024 Voters)
+
+```{r supplement_2_demographics}
+#| echo: false
+#| warning: false
+#| message: false
+#| output: asis
+
+# Define variables of interest with proper names
+demographic_vars <- c(
+  "Age" = "age_cat",
+  "Race/Ethnicity" = "race_eth_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Region" = "region_cat",
+  "Party Identification" = "PartyID5"
+)
+
+# Add total rows for 2024 voters
+total_rows <- tibble(
+  Category = c("Total", "2024 Voters"),
+  `N` = c("", format(nrow(voters_2024), big.mark = ",")),
+  `N (Wtd.)` = c("", format(round(sum(voters_2024$WEIGHT_EN, na.rm = TRUE)), big.mark = ",")),
+  `% (SE)` = c("", "100.0 (0.0)"),
+  `Trump Voter` = c("", ""),
+  `Harris Voter` = c("", "")
+)
+
+# Build the demographics table
+demographics_table <- map_dfr(names(demographic_vars), function(label) {
+  var <- demographic_vars[[label]]
+
+  # Get levels used in this variable
+  groups <- levels(droplevels(factor(voters_2024[[var]])))
+
+  # Filter out "Unknown" for Party Identification
+  if (var == "PartyID5") {
+    groups <- groups[groups != "Unknown"]
+  }
+
+  # Create dummy header row for the variable
+  header_row <- tibble(
+    Category = label,
+    `N` = "",
+    `N (Wtd.)` = "",
+    `% (SE)` = "",
+    `Trump Voter` = "",
+    `Harris Voter` = ""
+  )
+
+  # Category-level rows
+  category_rows <- map_dfr(groups, function(level_val) {
+    # Calculate unweighted and weighted N
+    unweighted_n <- sum(!is.na(voters_2024[[var]]) & voters_2024[[var]] == level_val)
+
+    # Calculate column percentages for each vote status
+    vote_status_percents <- map_dfr(c("Trump Voter", "Harris Voter"), function(vote_status) {
+      # Subset design for this vote status
+      status_design <- subset(svy_2024, voter_group_2024 == vote_status)
+
+      # Calculate percentage of this demographic group within this vote status
+      subset_design <- subset(status_design, !is.na(get(var)) & get(var) == level_val)
+
+      # Get weighted N for this group within this vote status
+      weighted_n <- sum(weights(subset_design))
+
+      # Get total weighted N for this vote status
+      total_weighted_n <- sum(weights(status_design))
+
+      # Calculate percentage
+      pct <- 100 * weighted_n / total_weighted_n
+
+      # Calculate SE using survey package
+      se <- tryCatch({
+        # Create a binary indicator for this level
+        status_design$is_level <- as.numeric(status_design$variables[[var]] == level_val)
+        prop <- svymean(~is_level, design = status_design, na.rm = TRUE)
+        100 * as.numeric(SE(prop))
+      }, error = function(e) {
+        # If error, calculate SE using the formula for a proportion
+        p <- weighted_n / total_weighted_n
+        sqrt(p * (1 - p) / total_weighted_n) * 100
+      })
+
+      tibble(
+        vote_status = vote_status,
+        pct = pct,
+        se = se
+      )
+    })
+
+    # Calculate overall percentage
+    subset_design <- subset(svy_2024, !is.na(get(var)) & get(var) == level_val)
+    weighted_n <- sum(weights(subset_design))
+    total_weighted_n <- sum(weights(svy_2024))
+    overall_pct <- 100 * weighted_n / total_weighted_n
+
+    # Calculate overall SE
+    overall_se <- tryCatch({
+      svy_2024$is_level <- as.numeric(svy_2024$variables[[var]] == level_val)
+      prop <- svymean(~is_level, design = svy_2024, na.rm = TRUE)
+      100 * as.numeric(SE(prop))
+    }, error = function(e) {
+      # If error, calculate SE using the formula for a proportion
+      p <- weighted_n / total_weighted_n
+      sqrt(p * (1 - p) / total_weighted_n) * 100
+    })
+
+    tibble(
+      Category = as.character(level_val),
+      `N` = format(unweighted_n, big.mark = ","),
+      `N (Wtd.)` = format(round(weighted_n, 1), big.mark = ","),
+      `% (SE)` = sprintf("%.1f (%.1f)", overall_pct, overall_se),
+      `Trump Voter` = sprintf("%.1f (%.1f)",
+                              vote_status_percents$pct[vote_status_percents$vote_status == "Trump Voter"],
+                              vote_status_percents$se[vote_status_percents$vote_status == "Trump Voter"]),
+      `Harris Voter` = sprintf("%.1f (%.1f)",
+                               vote_status_percents$pct[vote_status_percents$vote_status == "Harris Voter"],
+                               vote_status_percents$se[vote_status_percents$vote_status == "Harris Voter"])
+    )
+  })
+
+  bind_rows(header_row, category_rows)
+})
+
+# Add total counts to the table
+demographics_table <- bind_rows(
+  total_rows,
+  demographics_table
+)
+
+# Display the table with kable formatting
+table_display <- demographics_table |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  add_header_above(c(" " = 1, "All" = 3, "Weighted Estimates: % (SE)" = 2)) |>
+  row_spec(which(demographics_table$Category %in% c(names(demographic_vars), "Total")), bold = TRUE)
+
+cat(as.character(table_display))
+
+# Save to RDS
+saveRDS(demographics_table, "output/revised_supplement_2.rds")
+```
+
+
+## Supplement 3. Vaccine-Related Responses by Demographic Categories (2024 Voters)
+
+```{r supplement_3_vaccine_demographics}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define vaccine-related variables
+vaccine_vars <- list(
+  "JHU7_9" = "Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.",
+  "JHU5A" = "Continue government support for safe and effective vaccines",
+  "JHU6C" = "Removing school vaccination requirements for children"
+)
+
+# Define demographic categories
+demographic_categories <- list(
+  "Age" = "age_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Race/Ethnicity" = "race_eth_cat"
+)
+
+# Create separate tables for each demographic category
+all_demographic_tables <- list()
+
+for (demo_label in names(demographic_categories)) {
+  demo_var <- demographic_categories[[demo_label]]
+
+  # Get levels for this demographic
+  demo_levels <- levels(droplevels(factor(voters_2024[[demo_var]])))
+
+  # Create combined table for this demographic
+  demo_tables <- list()
+
+  for (var_name in names(vaccine_vars)) {
+    var_label <- vaccine_vars[[var_name]]
+
+    # Create header for this vaccine variable
+    header_row <- data.frame(
+      Response = paste0("<strong>", var_label, "</strong>"),
+      stringsAsFactors = FALSE
+    )
+    for (level in demo_levels) {
+      header_row[[level]] <- ""
+    }
+
+    # Get data rows for this vaccine variable
+    if (var_name == "JHU7_9") {
+      # For election issues, only show "Vaccines" percentage
+      temp_data <- voters_2024 |>
+        filter(!is.na(get(var_name)), !is.na(get(demo_var))) |>
+        mutate(temp = ifelse(get(var_name) == "Yes", 1, 0))
+
+      temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+      # Calculate by demographic group
+      prop_result <- svyby(
+        ~temp,
+        as.formula(paste0("~", demo_var)),
+        design = temp_design,
+        svymean,
+        na.rm = TRUE
+      )
+
+      # Create row
+      row_data <- data.frame(Response = "Vaccines", stringsAsFactors = FALSE)
+      for (level in demo_levels) {
+        if (level %in% prop_result[[demo_var]]) {
+          pct <- 100 * prop_result$temp[prop_result[[demo_var]] == level]
+          se <- 100 * SE(prop_result)[prop_result[[demo_var]] == level]
+          row_data[[level]] <- sprintf("%.1f (%.1f)", pct, se)
+        } else {
+          row_data[[level]] <- "0.0 (0.0)"
+        }
+      }
+
+      demo_tables[[length(demo_tables) + 1]] <- rbind(header_row, row_data)
+
+    } else {
+      # For JHU5A and JHU6C, show all response categories
+      responses <- levels(droplevels(factor(voters_2024[[var_name]])))
+      responses <- responses[!responses %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")]
+
+      response_rows <- list()
+
+      for (response in responses) {
+        temp_data <- voters_2024 |>
+          filter(!is.na(get(var_name)), !is.na(get(demo_var))) |>
+          mutate(temp = ifelse(get(var_name) == response, 1, 0))
+
+        temp_design <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = temp_data)
+
+        # Calculate by demographic group
+        prop_result <- svyby(
+          ~temp,
+          as.formula(paste0("~", demo_var)),
+          design = temp_design,
+          svymean,
+          na.rm = TRUE
+        )
+
+        # Create row
+        row_data <- data.frame(Response = response, stringsAsFactors = FALSE)
+        for (level in demo_levels) {
+          if (level %in% prop_result[[demo_var]]) {
+            pct <- 100 * prop_result$temp[prop_result[[demo_var]] == level]
+            se <- 100 * SE(prop_result)[prop_result[[demo_var]] == level]
+            row_data[[level]] <- sprintf("%.1f (%.1f)", pct, se)
+          } else {
+            row_data[[level]] <- "0.0 (0.0)"
+          }
+        }
+
+        response_rows[[length(response_rows) + 1]] <- row_data
+      }
+
+      demo_tables[[length(demo_tables) + 1]] <- rbind(header_row, do.call(rbind, response_rows))
+    }
+  }
+
+  # Combine all vaccine tables for this demographic with spacing
+  combined_demo_table <- NULL
+  for (i in seq_along(demo_tables)) {
+    if (is.null(combined_demo_table)) {
+      combined_demo_table <- demo_tables[[i]]
+    } else {
+      # Add blank row between vaccine questions
+      blank_row <- data.frame(Response = "", stringsAsFactors = FALSE)
+      for (level in demo_levels) {
+        blank_row[[level]] <- ""
+      }
+      combined_demo_table <- rbind(combined_demo_table, blank_row, demo_tables[[i]])
+    }
+  }
+
+  # Store this demographic's table separately
+  all_demographic_tables[[demo_label]] <- combined_demo_table
+}
+
+# Save individual demographic tables for Word output
+# Create clean versions without HTML tags for Word
+for (demo_label in names(all_demographic_tables)) {
+  # Clean the label for filename
+  clean_label <- gsub("/", "_", demo_label)
+  filename <- paste0("output/revised_supplement_3_", clean_label, ".rds")
+
+  # Get the table and remove HTML tags for Word output
+  clean_table <- all_demographic_tables[[demo_label]]
+
+  # Remove HTML tags from Response column
+  clean_table$Response <- gsub("<strong>", "", clean_table$Response)
+  clean_table$Response <- gsub("</strong>", "", clean_table$Response)
+  clean_table$Response <- gsub("<em>", "", clean_table$Response)
+  clean_table$Response <- gsub("</em>", "", clean_table$Response)
+
+  # Save this demographic's clean table
+  saveRDS(clean_table, filename)
+}
+
+# Also save the full list for reference (with HTML for display)
+saveRDS(all_demographic_tables, "output/revised_supplement_3_all.rds")
+
+# Display tables - we need to display them outside the chunk for proper rendering
+```
+
+### Age
+
+```{r}
+#| echo: false
+#| output: asis
+
+table_display <- all_demographic_tables[["Age"]] |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  row_spec(which(str_detect(all_demographic_tables[["Age"]]$Response, "<strong>")), bold = TRUE)
+
+cat(as.character(table_display))
+```
+
+### Gender
+
+```{r}
+#| echo: false
+#| output: asis
+
+table_display <- all_demographic_tables[["Gender"]] |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  row_spec(which(str_detect(all_demographic_tables[["Gender"]]$Response, "<strong>")), bold = TRUE)
+
+cat(as.character(table_display))
+```
+
+### Education
+
+```{r}
+#| echo: false
+#| output: asis
+
+table_display <- all_demographic_tables[["Education"]] |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  row_spec(which(str_detect(all_demographic_tables[["Education"]]$Response, "<strong>")), bold = TRUE)
+
+cat(as.character(table_display))
+```
+
+### Income
+
+```{r}
+#| echo: false
+#| output: asis
+
+table_display <- all_demographic_tables[["Income"]] |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  row_spec(which(str_detect(all_demographic_tables[["Income"]]$Response, "<strong>")), bold = TRUE)
+
+cat(as.character(table_display))
+```
+
+### Race/Ethnicity
+
+```{r}
+#| echo: false
+#| output: asis
+
+table_display <- all_demographic_tables[["Race/Ethnicity"]] |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  row_spec(which(str_detect(all_demographic_tables[["Race/Ethnicity"]]$Response, "<strong>")), bold = TRUE)
+
+cat(as.character(table_display))
+```
+
+### Sample Size Information for Supplement 3
+
+```{r supplement_3_sample_sizes}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Sample sizes for Supplement 3
+
+# Define demographic variables for the breakdown
+demographic_vars_supp3 <- list(
+  "Age" = "age_cat",
+  "Gender" = "gender_cat",
+  "Education" = "education_cat",
+  "Income" = "income_cat",
+  "Race/Ethnicity" = "race_eth_cat"
+)
+
+cat("Sample Size Information for Supplement 3\n")
+cat("=========================================\n\n")
+
+# Questions and demographic variables
+questions <- list(
+  "JHU7_9" = "Vaccines as Election Issue",
+  "JHU5A" = "Government Support for Vaccines",
+  "JHU6C" = "Remove School Vaccine Requirements"
+)
+
+demographics <- list(
+  "age_cat" = "Age",
+  "gender_cat" = "Gender",
+  "education_cat" = "Education",
+  "income_cat" = "Income",
+  "race_eth_cat" = "Race/Ethnicity"
+)
+
+for (q_var in names(questions)) {
+  q_label <- questions[[q_var]]
+
+  for (demo_var in names(demographics)) {
+    demo_label <- demographics[[demo_var]]
+
+    # Filter data based on question type
+    if (q_var == "JHU7_9") {
+      demo_data <- voters_2024 |>
+        filter(!is.na(get(q_var)) & !is.na(get(demo_var)))
+    } else {
+      demo_data <- voters_2024 |>
+        filter(!is.na(get(q_var)) &
+               get(q_var) %in% c("Strongly support", "Support", "Neither support nor oppose",
+                                "Oppose", "Strongly oppose") &
+               !is.na(get(demo_var)))
+    }
+
+    cat(sprintf("%s (%s): Unweighted N = %d, Weighted N = %.0f\n",
+                q_label, demo_label,
+                nrow(demo_data),
+                sum(demo_data$WEIGHT_EN, na.rm = TRUE)))
+  }
+  cat("\n")
+}
+```
+
+## Summary
+
+### Tables and Supplements
+- **Table 1**: Election issues and vaccine policy support by voter group
+- **Table 2**: Vaccine-related policies by educational attainment
+- **Supplement 2**: Demographics of 2024 voters
+- **Supplement 3**: Vaccine-related responses by demographic categories
+
+RDS files saved to `output/` directory for conversion to Word documents.

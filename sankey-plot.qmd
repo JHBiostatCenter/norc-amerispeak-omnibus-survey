@@ -1,0 +1,294 @@
+---
+title: "Voter Flow Analysis: 2020 to 2024"
+author: "Erik Westlund"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+format: 
+  html:
+    toc: true
+    toc-float: true
+    theme: cosmo
+    code-fold: true
+    self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| include: false
+
+# Load required packages and data
+source("project-setup.R")
+
+# Additional packages for Sankey
+if (!require(plotly)) install.packages("plotly")
+library(plotly)
+```
+
+## Voter Flow Sankey Diagram
+
+This visualization shows the flow of voters between the 2020 and 2024 elections, including those who didn't vote in one or both elections.
+
+```{r prepare_sankey_data}
+#| echo: false
+
+# Create comprehensive voting categories using the actual variables
+# Include non-response as a category instead of filtering it out
+data_flow <- data |>
+  mutate(
+    vote_2020 = case_when(
+      # 2020 voting based on candidate_2020 and vote_status_2020
+      candidate_2020 == "Donald Trump" ~ "Trump 2020",
+      candidate_2020 == "Joe Biden" ~ "Biden 2020",
+      candidate_2020 == "Someone else" ~ "Other 2020",
+      candidate_2020 == "Did not vote in this race" ~ "No Vote 2020",
+      grepl("did not vote", vote_status_2020, ignore.case = TRUE) ~ "No Vote 2020",
+      candidate_2020 %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED") ~ "Non-response 2020",
+      is.na(candidate_2020) & grepl("I'm sure I voted", vote_status_2020) ~ "Non-response 2020",
+      is.na(candidate_2020) & !is.na(vote_status_2020) ~ "No Vote 2020",
+      is.na(candidate_2020) ~ "Non-response 2020",
+      TRUE ~ "Non-response 2020"
+    ),
+    vote_2024 = case_when(
+      # 2024 voting based on candidate_2024 and vote_status_2024
+      candidate_2024 == "Donald Trump" ~ "Trump 2024",
+      candidate_2024 == "Kamala Harris" ~ "Harris 2024",
+      candidate_2024 == "Someone else" ~ "Other 2024",
+      candidate_2024 == "Did not vote in this race" ~ "No Vote 2024",
+      grepl("did not vote", vote_status_2024, ignore.case = TRUE) ~ "No Vote 2024",
+      candidate_2024 %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED") ~ "Non-response 2024",
+      is.na(candidate_2024) & grepl("I'm sure I voted", vote_status_2024) ~ "Non-response 2024",
+      is.na(candidate_2024) & !is.na(vote_status_2024) ~ "No Vote 2024",
+      is.na(candidate_2024) ~ "Non-response 2024",
+      TRUE ~ "Non-response 2024"
+    )
+  )
+
+# No longer filtering out non-responses - include all respondents
+
+# Calculate weighted flows
+flow_summary <- data_flow |>
+  group_by(vote_2020, vote_2024) |>
+  summarise(
+    unweighted_n = n(),
+    weighted_n = sum(WEIGHT_EN, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(weighted_n > 0)
+
+# Print summary statistics
+cat("Total respondents in flow analysis:", nrow(data_flow), "\n")
+cat("Total weighted N:", round(sum(flow_summary$weighted_n)), "\n\n")
+
+# Create a summary table
+flow_table <- flow_summary |>
+  mutate(
+    `Unweighted N` = unweighted_n,
+    `Weighted N` = round(weighted_n),
+    `Weighted %` = round(100 * weighted_n / sum(weighted_n), 1)
+  ) |>
+  select(
+    `2020 Vote` = vote_2020,
+    `2024 Vote` = vote_2024,
+    `Unweighted N`,
+    `Weighted N`,
+    `Weighted %`
+  ) |>
+  arrange(desc(`Weighted N`))
+```
+
+### Interactive Sankey Diagram (Plotly)
+
+```{r sankey_plotly}
+#| echo: false
+#| fig-height: 8
+#| fig-width: 10
+
+# Create nodes for Sankey
+all_2020 <- unique(flow_summary$vote_2020)
+all_2024 <- unique(flow_summary$vote_2024)
+
+# Create node labels with year suffix already included
+nodes <- data.frame(
+  name = c(all_2020, all_2024),
+  stringsAsFactors = FALSE
+)
+
+# Create links
+links <- flow_summary |>
+  mutate(
+    source = match(vote_2020, nodes$name) - 1,  # 0-indexed
+    target = match(vote_2024, nodes$name) - 1,   # 0-indexed
+    value = weighted_n
+  ) |>
+  select(source, target, value)
+
+# Define colors based on node names
+color_map <- c(
+  "Trump 2020" = "#E41A1C",      # Red for Trump
+  "Trump 2024" = "#E41A1C",
+  "Biden 2020" = "#377EB8",      # Blue for Biden/Harris
+  "Harris 2024" = "#377EB8",
+  "No Vote 2020" = "#984EA3",    # Purple for non-voters
+  "No Vote 2024" = "#984EA3",
+  "Other 2020" = "#4DAF4A",      # Green for other
+  "Other 2024" = "#4DAF4A",
+  "Non-response 2020" = "#999999", # Gray for non-response
+  "Non-response 2024" = "#999999"
+)
+
+node_colors <- sapply(nodes$name, function(x) color_map[x])
+
+# Create plotly Sankey
+fig <- plot_ly(
+  type = "sankey",
+  orientation = "h",
+  arrangement = "snap",
+  node = list(
+    label = nodes$name,
+    color = node_colors,
+    pad = 15,
+    thickness = 30,
+    line = list(color = "black", width = 0.5)
+  ),
+  link = list(
+    source = links$source,
+    target = links$target,
+    value = links$value,
+    color = adjustcolor(node_colors[links$source + 1], alpha = 0.4)
+  )
+)
+
+fig <- fig |> 
+  layout(
+    title = list(text = "Voter Flow from 2020 to 2024 Election", font = list(size = 20)),
+    font = list(size = 12),
+    height = 600,
+    margin = list(t = 50, l = 50, r = 50, b = 50)
+  )
+
+fig
+```
+
+## Flow Analysis Tables
+
+### Table 1: Complete Flow Matrix
+
+```{r flow_matrix}
+#| echo: false
+
+# Create a pivot table showing the flow
+flow_matrix <- flow_summary |>
+  select(vote_2020, vote_2024, weighted_n) |>
+  pivot_wider(
+    names_from = vote_2024,
+    values_from = weighted_n,
+    values_fill = 0
+  ) |>
+  mutate(
+    Total_2020 = rowSums(across(where(is.numeric)), na.rm = TRUE)
+  )
+
+# Add column totals - ensure all values are converted to character for binding
+col_totals <- flow_matrix |>
+  summarise(
+    vote_2020 = "Total 2024",
+    across(where(is.numeric), ~sum(., na.rm = TRUE))
+  )
+
+flow_matrix_display <- flow_matrix |>
+  mutate(across(where(is.numeric), ~round(.))) |>
+  mutate(across(everything(), as.character)) |>
+  bind_rows(
+    col_totals |> 
+      mutate(across(where(is.numeric), ~round(.))) |>
+      mutate(across(everything(), as.character))
+  )
+
+flow_matrix_display |>
+  kable(format = "html", caption = "Weighted voter flow from 2020 to 2024") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  row_spec(nrow(flow_matrix_display), bold = TRUE) |>
+  column_spec(ncol(flow_matrix_display), bold = TRUE)
+```
+
+### Table 2: Key Voter Transitions
+
+```{r key_transitions}
+#| echo: false
+
+# Identify key transitions
+key_transitions <- flow_summary |>
+  mutate(
+    transition_type = case_when(
+      vote_2020 == "Trump 2020" & vote_2024 == "Trump 2024" ~ "Trump → Trump",
+      vote_2020 == "Biden 2020" & vote_2024 == "Harris 2024" ~ "Biden → Harris",
+      vote_2020 == "Trump 2020" & vote_2024 == "Harris 2024" ~ "Trump → Harris",
+      vote_2020 == "Biden 2020" & vote_2024 == "Trump 2024" ~ "Biden → Trump",
+      vote_2020 == "No Vote 2020" & vote_2024 == "Trump 2024" ~ "Didn't vote → Trump",
+      vote_2020 == "No Vote 2020" & vote_2024 == "Harris 2024" ~ "Didn't vote → Harris",
+      vote_2020 == "Trump 2020" & vote_2024 == "No Vote 2024" ~ "Trump → Didn't vote",
+      vote_2020 == "Biden 2020" & vote_2024 == "No Vote 2024" ~ "Biden → Didn't vote",
+      vote_2020 == "No Vote 2020" & vote_2024 == "No Vote 2024" ~ "Didn't vote → Didn't vote",
+      vote_2020 == "Other 2020" & vote_2024 == "Trump 2024" ~ "Other → Trump",
+      vote_2020 == "Other 2020" & vote_2024 == "Harris 2024" ~ "Other → Harris",
+      vote_2020 == "Other 2020" & vote_2024 == "Other 2024" ~ "Other → Other",
+      vote_2020 == "Other 2020" & vote_2024 == "No Vote 2024" ~ "Other → Didn't vote",
+      vote_2020 == "Trump 2020" & vote_2024 == "Other 2024" ~ "Trump → Other",
+      vote_2020 == "Biden 2020" & vote_2024 == "Other 2024" ~ "Biden → Other",
+      vote_2020 == "No Vote 2020" & vote_2024 == "Other 2024" ~ "Didn't vote → Other",
+      vote_2020 == "Non-response 2020" & vote_2024 == "Non-response 2024" ~ "Non-response → Non-response",
+      vote_2020 == "Non-response 2020" ~ paste0("Non-response → ", gsub(" 2024", "", vote_2024)),
+      vote_2024 == "Non-response 2024" ~ paste0(gsub(" 2020", "", vote_2020), " → Non-response"),
+      TRUE ~ paste0(gsub(" 2020", "", vote_2020), " → ", gsub(" 2024", "", vote_2024))
+    )
+  ) |>
+  group_by(transition_type) |>
+  summarise(
+    `Unweighted N` = sum(unweighted_n),
+    `Weighted N` = round(sum(weighted_n)),
+    `Weighted %` = round(100 * sum(weighted_n) / sum(flow_summary$weighted_n), 1),
+    .groups = "drop"
+  ) |>
+  arrange(desc(`Weighted N`))
+
+key_transitions |>
+  kable(format = "html", caption = "Key voter transitions between 2020 and 2024") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+### Table 3: Voter Categories Used in Main Analysis
+
+```{r analysis_categories}
+#| echo: false
+
+# Show how our analysis categories map to the flows
+analysis_categories <- data_flow |>
+  mutate(
+    analysis_category = case_when(
+      vote_2020 == "Trump 2020" & vote_2024 == "Trump 2024" ~ "Trump Voter",
+      vote_2020 == "Biden 2020" & vote_2024 == "Harris 2024" ~ "Biden/Harris Voter",
+      vote_2020 != "Trump 2020" & vote_2024 == "Trump 2024" ~ "New Trump Voter",
+      vote_2020 != "Biden 2020" & vote_2024 == "Harris 2024" ~ "New Harris Voter",
+      vote_2024 %in% c("Trump 2024", "Harris 2024") ~ "Other 2024 Voter",
+      TRUE ~ "Non-voter or Other"
+    )
+  ) |>
+  filter(analysis_category %in% c("Trump Voter", "Biden/Harris Voter", "New Trump Voter", "New Harris Voter")) |>
+  group_by(analysis_category) |>
+  summarise(
+    `Unweighted N` = n(),
+    `Weighted N` = round(sum(WEIGHT_EN, na.rm = TRUE)),
+    `Weighted %` = round(100 * sum(WEIGHT_EN, na.rm = TRUE) / sum(data_flow$WEIGHT_EN, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) |>
+  arrange(desc(`Weighted N`))
+
+analysis_categories |>
+  kable(format = "html", 
+        caption = "Voter categories used in the main analysis (Tables 1 and 2 in main document)") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |>
+  footnote(general = "These four categories are the focus of the vaccine attitude analysis in the main tables.")
+```
+

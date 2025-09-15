@@ -30,6 +30,87 @@ editor:
 source("project-setup.R")
 ```
 
+<style>
+/* Normalize all kableExtra HTML tables across the doc */
+table.table {
+  font-size: 0.875rem;              /* match Appendix 3 look */
+}
+table.table.table-sm > :not(caption) > * > * {
+  padding: .3rem .5rem !important;  /* compact cell padding */
+}
+/* If any table misses the .table-sm class, still compact it */
+table.table > :not(caption) > * > * {
+  padding: .3rem .5rem;
+}
+</style>
+
+## Table 0. Sample Sizes by Voter Group
+
+```{r table_0_sample_sizes}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create a table showing sample sizes for each voter group
+# Filter to voters only (those with party_switch_analysis defined)
+voters_data <- data |> 
+  filter(!is.na(party_switch_analysis))
+
+# Party categories 
+party_levels <- c("New Trump Voter", "Trump Voter", "New Harris Voter", "Biden/Harris Voter")
+
+# Calculate unweighted and weighted counts for each group
+sample_sizes <- map_dfr(party_levels, function(group) {
+  group_data <- voters_data |> filter(party_switch_analysis == group)
+  
+  # Unweighted count
+  unweighted_n <- nrow(group_data)
+  
+  # Weighted count
+  weighted_n <- sum(group_data$WEIGHT_EN, na.rm = TRUE)
+  
+  tibble(
+    `Voter Group` = group,
+    `Unweighted N` = format(unweighted_n, big.mark = ","),
+    `Weighted N` = format(round(weighted_n), big.mark = ",")
+  )
+})
+
+# Add total row
+total_unweighted <- nrow(voters_data)
+total_weighted <- sum(voters_data$WEIGHT_EN, na.rm = TRUE)
+
+sample_sizes <- bind_rows(
+  sample_sizes,
+  tibble(
+    `Voter Group` = "<strong>Total Voters</strong>",
+    `Unweighted N` = format(total_unweighted, big.mark = ","),
+    `Weighted N` = format(round(total_weighted), big.mark = ",")
+  )
+)
+
+# Add row for all respondents (including non-voters)
+all_unweighted <- nrow(data)
+all_weighted <- sum(data$WEIGHT_EN, na.rm = TRUE)
+
+sample_sizes <- bind_rows(
+  sample_sizes,
+  tibble(
+    `Voter Group` = "<strong>Total Sample (including non-voters)</strong>",
+    `Unweighted N` = format(all_unweighted, big.mark = ","),
+    `Weighted N` = format(round(all_weighted), big.mark = ",")
+  )
+)
+
+# Display the table
+sample_sizes |> 
+  kable(escape = FALSE, format = "html", 
+        caption = "Sample sizes for voter groups analyzed in Tables 1 and 2. All analyses are restricted to respondents who voted in the 2024 election.") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = FALSE) |>
+  row_spec(c(5, 6), bold = TRUE) |>
+  footnote(general = "Voter groups are defined based on self-reported voting behavior in 2020 and 2024. 'New Trump Voter' = Did not vote Trump 2020, voted Trump 2024. 'Trump Voter' = Voted Trump in both elections. 'New Harris Voter' = Did not vote Biden 2020, voted Harris 2024. 'Biden/Harris Voter' = Voted Biden 2020 and Harris 2024.")
+```
 
 ## Table 1. Vaccine-Related Questions
 
@@ -216,8 +297,7 @@ table_1 <- map_dfr(vaccine_vars, function(var) {
 table_1|> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: % (SE)" = 4)) |>
   column_spec(1, width = "50%") |>
   column_spec(2:6, width = "10%") |>
@@ -234,8 +314,7 @@ table_1 |>
   select(-`New Harris Voter %`) |>
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: % (SE)" = 3)) |>
   column_spec(1, width = "50%") |>
   column_spec(2:5, width = "10%") |>
@@ -256,8 +335,7 @@ table_1_no_se <- table_1 |>
 table_1_no_se |> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: %" = 4)) |>
   column_spec(1, width = "50%") |>
   column_spec(2:6, width = "10%") |>
@@ -275,8 +353,7 @@ table_1_no_se |>
   select(-`New Harris Voter %`) |>
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   add_header_above(c(" " = 1, "All" = 1, "Weighted Estimates: %" = 3)) |>
   column_spec(1, width = "50%") |>
   column_spec(2:5, width = "10%") |>
@@ -404,8 +481,7 @@ table_2_combined <- bind_rows(table_2_0, table_2_1, table_2_2)
 table_2_combined |> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   column_spec(1, width = "30%") |>
   column_spec(2:ncol(table_2_combined), width = paste0(70/(ncol(table_2_combined)-1), "%")) |>
   row_spec(which(str_detect(table_2_combined$Response, "<strong>")), bold = TRUE)
@@ -760,8 +836,7 @@ appendix_3a <- create_demographic_vaccine_crosstab("age_cat", "Age")
 appendix_3a |> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   column_spec(1, width = "30%") |>
   column_spec(2:ncol(appendix_3a), width = paste0(70/(ncol(appendix_3a)-1), "%")) |>
   row_spec(which(str_detect(appendix_3a$Response, "<strong>")), bold = TRUE)
@@ -781,8 +856,7 @@ appendix_3b <- create_demographic_vaccine_crosstab("gender_cat", "Gender")
 appendix_3b |> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   column_spec(1, width = "30%") |>
   column_spec(2:ncol(appendix_3b), width = paste0(70/(ncol(appendix_3b)-1), "%")) |>
   row_spec(which(str_detect(appendix_3b$Response, "<strong>")), bold = TRUE)
@@ -802,8 +876,7 @@ appendix_3c <- create_demographic_vaccine_crosstab("income_cat", "Income")
 appendix_3c |> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   column_spec(1, width = "30%") |>
   column_spec(2:ncol(appendix_3c), width = paste0(70/(ncol(appendix_3c)-1), "%")) |>
   row_spec(which(str_detect(appendix_3c$Response, "<strong>")), bold = TRUE)
@@ -823,12 +896,819 @@ appendix_3d <- create_demographic_vaccine_crosstab("race_eth_cat", "Race/Ethnici
 appendix_3d |> 
   kable(escape = FALSE, format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
-                full_width = TRUE,
-                html_font = "Arial") |>
+                full_width = TRUE) |>
   column_spec(1, width = "30%") |>
   column_spec(2:ncol(appendix_3d), width = paste0(70/(ncol(appendix_3d)-1), "%")) |>
   row_spec(which(str_detect(appendix_3d$Response, "<strong>")), bold = TRUE)
 ```
+
+### Appendix 3E. Education Cross-Tabulations
+
+```{r appendix_3e_education}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create Education cross-tabulation table
+appendix_3e <- create_demographic_vaccine_crosstab("education_cat", "Education")
+
+# Display the table
+appendix_3e |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(appendix_3e), width = paste0(70/(ncol(appendix_3e)-1), "%")) |>
+  row_spec(which(str_detect(appendix_3e$Response, "<strong>")), bold = TRUE)
+```
+
+### Appendix 3F. Education (Collapsed Categories) Cross-Tabulations
+
+```{r appendix_3f_education_collapsed}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create function for collapsed education categories
+create_collapsed_education_crosstab <- function() {
+  # First create the collapsed education variable
+  data_collapsed <- data |>
+    mutate(
+      education_collapsed = case_when(
+        education_cat %in% c("Less than high school", "High school graduate or equivalent") ~ "HS or Less",
+        education_cat == "Some college/associates degree" ~ "Some college/associates",
+        education_cat %in% c("Bachelor's degree", "Postgraduate study/professional degree") ~ "Bachelor's or Higher",
+        TRUE ~ NA_character_
+      )
+    )
+  
+  results_list <- list()
+  
+  # Add header for election issues
+  header_election <- tibble(
+    Response = "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>",
+    `HS or Less` = "",
+    `Some college/associates` = "",
+    `Bachelor's or Higher` = ""
+  )
+  results_list[["header_election"]] <- header_election
+  
+  # Process JHU7_9 - Vaccines as election issue
+  data_jhu7_9 <- data_collapsed |>
+    filter(
+      !is.na(JHU7_9),
+      !JHU7_9 %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+      !is.na(education_collapsed)
+    ) |>
+    mutate(is_yes = as.numeric(JHU7_9 == "Yes"))
+  
+  svy_jhu7_9 <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = data_jhu7_9)
+  props_jhu7_9 <- svyby(~is_yes, ~education_collapsed, svy_jhu7_9, svymean, na.rm = TRUE)
+  
+  jhu7_9_row <- tibble(
+    Response = "Vaccines",
+    `HS or Less` = sprintf("%.1f (%.1f)", 
+                          props_jhu7_9$is_yes[props_jhu7_9$education_collapsed == "HS or Less"] * 100,
+                          SE(props_jhu7_9)[props_jhu7_9$education_collapsed == "HS or Less"] * 100),
+    `Some college/associates` = sprintf("%.1f (%.1f)", 
+                                       props_jhu7_9$is_yes[props_jhu7_9$education_collapsed == "Some college/associates"] * 100,
+                                       SE(props_jhu7_9)[props_jhu7_9$education_collapsed == "Some college/associates"] * 100),
+    `Bachelor's or Higher` = sprintf("%.1f (%.1f)", 
+                                    props_jhu7_9$is_yes[props_jhu7_9$education_collapsed == "Bachelor's or Higher"] * 100,
+                                    SE(props_jhu7_9)[props_jhu7_9$education_collapsed == "Bachelor's or Higher"] * 100)
+  )
+  results_list[["jhu7_9"]] <- jhu7_9_row
+  
+  # Add header for JHU5A
+  header_jhu5a <- tibble(
+    Response = "<strong>Continue government support for safe and effective vaccines</strong>",
+    `HS or Less` = "",
+    `Some college/associates` = "",
+    `Bachelor's or Higher` = ""
+  )
+  results_list[["header_jhu5a"]] <- header_jhu5a
+  
+  # Process JHU5A responses
+  data_jhu5a <- data_collapsed |>
+    filter(
+      !is.na(JHU5A),
+      !JHU5A %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+      !is.na(education_collapsed)
+    )
+  
+  svy_jhu5a <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = data_jhu5a)
+  
+  # Calculate proportions for each response
+  for (response in c("Strongly support", "Support", "Neither support nor oppose", 
+                     "Oppose", "Strongly oppose")) {
+    data_jhu5a_resp <- data_jhu5a |>
+      mutate(is_response = as.numeric(JHU5A == response))
+    
+    svy_resp <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = data_jhu5a_resp)
+    props_resp <- svyby(~is_response, ~education_collapsed, svy_resp, svymean, na.rm = TRUE)
+    
+    response_row <- tibble(
+      Response = response,
+      `HS or Less` = sprintf("%.1f (%.1f)", 
+                            props_resp$is_response[props_resp$education_collapsed == "HS or Less"] * 100,
+                            SE(props_resp)[props_resp$education_collapsed == "HS or Less"] * 100),
+      `Some college/associates` = sprintf("%.1f (%.1f)", 
+                                         props_resp$is_response[props_resp$education_collapsed == "Some college/associates"] * 100,
+                                         SE(props_resp)[props_resp$education_collapsed == "Some college/associates"] * 100),
+      `Bachelor's or Higher` = sprintf("%.1f (%.1f)", 
+                                      props_resp$is_response[props_resp$education_collapsed == "Bachelor's or Higher"] * 100,
+                                      SE(props_resp)[props_resp$education_collapsed == "Bachelor's or Higher"] * 100)
+    )
+    results_list[[paste0("jhu5a_", response)]] <- response_row
+  }
+  
+  # Add header for JHU6C
+  header_jhu6c <- tibble(
+    Response = "<strong>Removing school vaccination requirements for children</strong>",
+    `HS or Less` = "",
+    `Some college/associates` = "",
+    `Bachelor's or Higher` = ""
+  )
+  results_list[["header_jhu6c"]] <- header_jhu6c
+  
+  # Process JHU6C responses
+  data_jhu6c <- data_collapsed |>
+    filter(
+      !is.na(JHU6C),
+      !JHU6C %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+      !is.na(education_collapsed)
+    )
+  
+  svy_jhu6c <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = data_jhu6c)
+  
+  # Calculate proportions for each response
+  for (response in c("Strongly support", "Support", "Neither support nor oppose", 
+                     "Oppose", "Strongly oppose")) {
+    data_jhu6c_resp <- data_jhu6c |>
+      mutate(is_response = as.numeric(JHU6C == response))
+    
+    svy_resp <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = data_jhu6c_resp)
+    props_resp <- svyby(~is_response, ~education_collapsed, svy_resp, svymean, na.rm = TRUE)
+    
+    response_row <- tibble(
+      Response = response,
+      `HS or Less` = sprintf("%.1f (%.1f)", 
+                            props_resp$is_response[props_resp$education_collapsed == "HS or Less"] * 100,
+                            SE(props_resp)[props_resp$education_collapsed == "HS or Less"] * 100),
+      `Some college/associates` = sprintf("%.1f (%.1f)", 
+                                         props_resp$is_response[props_resp$education_collapsed == "Some college/associates"] * 100,
+                                         SE(props_resp)[props_resp$education_collapsed == "Some college/associates"] * 100),
+      `Bachelor's or Higher` = sprintf("%.1f (%.1f)", 
+                                      props_resp$is_response[props_resp$education_collapsed == "Bachelor's or Higher"] * 100,
+                                      SE(props_resp)[props_resp$education_collapsed == "Bachelor's or Higher"] * 100)
+    )
+    results_list[[paste0("jhu6c_", response)]] <- response_row
+  }
+  
+  # Combine all results
+  bind_rows(results_list)
+}
+
+# Create the collapsed education table
+appendix_3f <- create_collapsed_education_crosstab()
+
+# Display the table
+appendix_3f |> 
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE) |>
+  column_spec(1, width = "40%") |>
+  column_spec(2:ncol(appendix_3f), width = paste0(60/(ncol(appendix_3f)-1), "%")) |>
+  row_spec(which(str_detect(appendix_3f$Response, "<strong>")), bold = TRUE)
+```
+
+## Appendix 4. Education Differences Analysis
+
+```{r education_differences_function}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Function to analyze education differences for vaccine questions
+analyze_education_differences <- function(var, question_text) {
+  
+  # Create survey design
+  svy_design <- svydesign(
+    ids = ~1, 
+    weights = ~WEIGHT_EN, 
+    data = data,
+    na.action = na.omit
+  )
+  
+  # Filter out non-responses
+  svy_filtered <- subset(svy_design, 
+    !get(var) %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED") &
+    !is.na(education_cat))
+  
+  # Get response levels
+  responses <- levels(droplevels(factor(svy_filtered$variables[[var]])))
+  
+  # For JHU7_9, only analyze "Yes" responses
+  if (var == "JHU7_9") {
+    responses <- responses[responses == "Yes"]
+  }
+  
+  # Calculate percentages by education level for each response
+  results_list <- list()
+  
+  for (response in responses) {
+    # Create indicators for this response
+    svy_filtered$variables$is_response <- as.numeric(svy_filtered$variables[[var]] == response)
+    
+    # Calculate weighted percentages by education
+    edu_props <- svyby(~is_response, ~education_cat, svy_filtered, svymean, na.rm = TRUE)
+    
+    # Extract percentages for all 5 education levels
+    less_than_hs <- edu_props$is_response[edu_props$education_cat == "Less than high school"] * 100
+    high_school <- edu_props$is_response[edu_props$education_cat == "High school graduate or equivalent"] * 100
+    some_college <- edu_props$is_response[edu_props$education_cat == "Some college/associates degree"] * 100
+    bachelors <- edu_props$is_response[edu_props$education_cat == "Bachelor's degree"] * 100
+    postgrad <- edu_props$is_response[edu_props$education_cat == "Postgraduate study/professional degree"] * 100
+    
+    # Calculate differences
+    postgrad_less_hs_diff <- postgrad - less_than_hs
+    bachelors_hs_diff <- bachelors - high_school
+    
+    # Store results - focusing on differences
+    results_list[[response]] <- tibble(
+      Response = response,
+      `Less than HS %` = sprintf("%.1f", less_than_hs),
+      `High School %` = sprintf("%.1f", high_school),
+      `Some College %` = sprintf("%.1f", some_college),
+      `Bachelor's %` = sprintf("%.1f", bachelors),
+      `Postgraduate %` = sprintf("%.1f", postgrad),
+      `Postgrad - Less HS Diff` = sprintf("%+.1f", postgrad_less_hs_diff),
+      `Bachelor's - HS Diff` = sprintf("%+.1f", bachelors_hs_diff)
+    )
+  }
+  
+  # Perform Rao-Scott chi-square test - fixing the formula
+  chi_sq_result <- tryCatch({
+    # Create formula for association test
+    formula_str <- as.formula(paste0("~", var, " + education_cat"))
+    test <- svychisq(formula_str, 
+                      design = svy_filtered, 
+                      statistic = "Chisq")
+    list(
+      statistic = as.numeric(test$statistic),
+      p_value = as.numeric(test$p.value),
+      df = as.numeric(test$parameter)
+    )
+  }, error = function(e) {
+    # Try alternative approach if first fails
+    tryCatch({
+      # Ensure variables are factors
+      svy_filtered$variables[[var]] <- factor(svy_filtered$variables[[var]])
+      svy_filtered$variables$education_cat <- factor(svy_filtered$variables$education_cat)
+      
+      test <- svychisq(as.formula(paste0("~", var, " + education_cat")), 
+                        design = svy_filtered, 
+                        statistic = "Chisq")
+      list(
+        statistic = as.numeric(test$statistic),
+        p_value = as.numeric(test$p.value),
+        df = as.numeric(test$parameter)
+      )
+    }, error = function(e2) {
+      list(statistic = NA, p_value = NA, df = NA)
+    })
+  })
+  
+  # Combine results
+  results_df <- bind_rows(results_list)
+  
+  # Add chi-square test results as a row
+  chi_sq_row <- tibble(
+    Response = "Rao-Scott χ² Test",
+    `Less than HS %` = "",
+    `High School %` = "",
+    `Some College %` = "",
+    `Bachelor's %` = "",
+    `Postgraduate %` = "",
+    `Postgrad - Less HS Diff` = ifelse(is.na(chi_sq_result$statistic), 
+                                        "χ² = NA", 
+                                        sprintf("χ² = %.2f (df=%d)", chi_sq_result$statistic, chi_sq_result$df)),
+    `Bachelor's - HS Diff` = ifelse(is.na(chi_sq_result$p_value), 
+                                    "p = NA", 
+                                    sprintf("p = %.4f", chi_sq_result$p_value))
+  )
+  
+  # Add question header
+  header_row <- tibble(
+    Response = paste0("<strong>", question_text, "</strong>"),
+    `Less than HS %` = "",
+    `High School %` = "",
+    `Some College %` = "",
+    `Bachelor's %` = "",
+    `Postgraduate %` = "",
+    `Postgrad - Less HS Diff` = "",
+    `Bachelor's - HS Diff` = ""
+  )
+  
+  bind_rows(header_row, results_df, chi_sq_row)
+}
+```
+
+### Table 4A. Comprehensive Demographic Differences Analysis
+
+```{r table_4e_demographic_differences}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Calculate all demographic differences
+calculate_demographic_differences <- function() {
+  
+  # Define all variables to analyze
+  election_vars <- c(
+    "JHU7_1" = "Health care",
+    "JHU7_2" = "Foreign policy", 
+    "JHU7_3" = "Democracy",
+    "JHU7_4" = "Inflation",
+    "JHU7_5" = "Immigration",
+    "JHU7_6" = "Crime",
+    "JHU7_7" = "Jobs",
+    "JHU7_8" = "Abortion",
+    "JHU7_9" = "Vaccines",
+    "JHU7_10" = "Poverty",
+    "JHU7_11" = "Inequality",
+    "JHU7_12" = "Education"
+  )
+  
+  results_list <- list()
+  
+  # Add header row for election issues
+  results_list[["header_election"]] <- tibble(
+    Question = "<strong>Which issues, if any, mattered to you during the 2024 presidential election? Choose up to 3.</strong>",
+    `Age: 60+ vs 18-29` = "",
+    `Gender: Male vs Female` = "",
+    `Income: $100K+ vs <$30K` = "",
+    `Race: White vs Black` = "",
+    `Educ 1: Postgrad vs <HS` = "",
+    `Educ 2: Bachelor+ vs HS-` = ""
+  )
+  
+  # Process election issue variables
+  for (var in names(election_vars)) {
+    tryCatch({
+      # Prepare data
+      temp_data <- data |>
+        filter(
+          !is.na(.data[[var]]),
+          !.data[[var]] %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+        ) |>
+        mutate(
+          is_yes = as.numeric(.data[[var]] == "Yes"),
+          # Create binary education variable for second comparison
+          education_binary = case_when(
+            education_cat %in% c("Less than high school", "High school graduate or equivalent") ~ "HS or Less",
+            education_cat %in% c("Bachelor's degree", "Postgraduate study/professional degree") ~ "Bachelor's or More",
+            TRUE ~ NA_character_
+          )
+        )
+      
+      # Age: 60+ vs 18-29
+      age_diff <- tryCatch({
+        age_data <- temp_data |> filter(!is.na(age_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = age_data)
+        props <- svyby(~is_yes, ~age_cat, svy, svymean, na.rm = TRUE)
+        age_60plus <- props$is_yes[props$age_cat == "60+"] * 100
+        age_18_29 <- props$is_yes[props$age_cat == "18-29"] * 100
+        sprintf("%+.1f", age_60plus - age_18_29)
+      }, error = function(e) "—")
+      
+      # Gender: Male vs Female
+      gender_diff <- tryCatch({
+        gender_data <- temp_data |> filter(!is.na(gender_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = gender_data)
+        props <- svyby(~is_yes, ~gender_cat, svy, svymean, na.rm = TRUE)
+        male <- props$is_yes[props$gender_cat == "Male"] * 100
+        female <- props$is_yes[props$gender_cat == "Female"] * 100
+        sprintf("%+.1f", male - female)
+      }, error = function(e) "—")
+      
+      # Income: $100K+ vs <$30K
+      income_diff <- tryCatch({
+        income_data <- temp_data |> filter(!is.na(income_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = income_data)
+        props <- svyby(~is_yes, ~income_cat, svy, svymean, na.rm = TRUE)
+        high_income <- props$is_yes[props$income_cat == "$100,000 or more"] * 100
+        low_income <- props$is_yes[props$income_cat == "Less than $30,000"] * 100
+        sprintf("%+.1f", high_income - low_income)
+      }, error = function(e) "—")
+      
+      # Race: White vs Black
+      race_diff <- tryCatch({
+        race_data <- temp_data |> filter(!is.na(race_eth_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = race_data)
+        props <- svyby(~is_yes, ~race_eth_cat, svy, svymean, na.rm = TRUE)
+        white <- props$is_yes[grepl("White", props$race_eth_cat)] * 100
+        black <- props$is_yes[grepl("Black", props$race_eth_cat)] * 100
+        sprintf("%+.1f", white[1] - black[1])
+      }, error = function(e) "—")
+      
+      # Education 1: Postgrad vs Less than HS
+      edu1_diff <- tryCatch({
+        edu_data <- temp_data |> filter(education_cat %in% c("Less than high school", "Postgraduate study/professional degree"))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = edu_data)
+        props <- svyby(~is_yes, ~education_cat, svy, svymean, na.rm = TRUE)
+        postgrad <- props$is_yes[props$education_cat == "Postgraduate study/professional degree"] * 100
+        less_hs <- props$is_yes[props$education_cat == "Less than high school"] * 100
+        sprintf("%+.1f", postgrad - less_hs)
+      }, error = function(e) "—")
+      
+      # Education 2: Bachelor+ vs HS or Less
+      edu2_diff <- tryCatch({
+        edu_binary_data <- temp_data |> filter(!is.na(education_binary))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = edu_binary_data)
+        props <- svyby(~is_yes, ~education_binary, svy, svymean, na.rm = TRUE)
+        bachelor_plus <- props$is_yes[props$education_binary == "Bachelor's or More"] * 100
+        hs_or_less <- props$is_yes[props$education_binary == "HS or Less"] * 100
+        sprintf("%+.1f", bachelor_plus - hs_or_less)
+      }, error = function(e) "—")
+      
+      results_list[[var]] <- tibble(
+        Question = election_vars[var],
+        `Age: 60+ vs 18-29` = age_diff,
+        `Gender: Male vs Female` = gender_diff,
+        `Income: $100K+ vs <$30K` = income_diff,
+        `Race: White vs Black` = race_diff,
+        `Educ 1: Postgrad vs <HS` = edu1_diff,
+        `Educ 2: Bachelor+ vs HS-` = edu2_diff
+      )
+    }, error = function(e) NULL)
+  }
+  
+  # Add empty row
+  results_list[["empty1"]] <- tibble(
+    Question = "",
+    `Age: 60+ vs 18-29` = "",
+    `Gender: Male vs Female` = "",
+    `Income: $100K+ vs <$30K` = "",
+    `Race: White vs Black` = "",
+    `Educ 1: Postgrad vs <HS` = "",
+    `Educ 2: Bachelor+ vs HS-` = ""
+  )
+  
+  # Process JHU5A - Continue government support
+  results_list[["header_jhu5a"]] <- tibble(
+    Question = "<strong>Continue government support for safe and effective vaccines</strong>",
+    `Age: 60+ vs 18-29` = "",
+    `Gender: Male vs Female` = "",
+    `Income: $100K+ vs <$30K` = "",
+    `Race: White vs Black` = "",
+    `Educ 1: Postgrad vs <HS` = "",
+    `Educ 2: Bachelor+ vs HS-` = ""
+  )
+  
+  # Process JHU5A responses
+  for (response in c("Strongly support", "Support", "Neither support nor oppose", "Oppose", "Strongly oppose")) {
+    tryCatch({
+      temp_data <- data |>
+        filter(
+          !is.na(JHU5A),
+          !JHU5A %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+        ) |>
+        mutate(
+          is_response = as.numeric(JHU5A == response),
+          education_binary = case_when(
+            education_cat %in% c("Less than high school", "High school graduate or equivalent") ~ "HS or Less",
+            education_cat %in% c("Bachelor's degree", "Postgraduate study/professional degree") ~ "Bachelor's or More",
+            TRUE ~ NA_character_
+          )
+        )
+      
+      # Calculate differences for each demographic
+      age_diff <- tryCatch({
+        age_data <- temp_data |> filter(!is.na(age_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = age_data)
+        props <- svyby(~is_response, ~age_cat, svy, svymean, na.rm = TRUE)
+        age_60plus <- props$is_response[props$age_cat == "60+"] * 100
+        age_18_29 <- props$is_response[props$age_cat == "18-29"] * 100
+        sprintf("%+.1f", age_60plus - age_18_29)
+      }, error = function(e) "—")
+      
+      gender_diff <- tryCatch({
+        gender_data <- temp_data |> filter(!is.na(gender_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = gender_data)
+        props <- svyby(~is_response, ~gender_cat, svy, svymean, na.rm = TRUE)
+        male <- props$is_response[props$gender_cat == "Male"] * 100
+        female <- props$is_response[props$gender_cat == "Female"] * 100
+        sprintf("%+.1f", male - female)
+      }, error = function(e) "—")
+      
+      income_diff <- tryCatch({
+        income_data <- temp_data |> filter(!is.na(income_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = income_data)
+        props <- svyby(~is_response, ~income_cat, svy, svymean, na.rm = TRUE)
+        high_income <- props$is_response[props$income_cat == "$100,000 or more"] * 100
+        low_income <- props$is_response[props$income_cat == "Less than $30,000"] * 100
+        sprintf("%+.1f", high_income - low_income)
+      }, error = function(e) "—")
+      
+      race_diff <- tryCatch({
+        race_data <- temp_data |> filter(!is.na(race_eth_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = race_data)
+        props <- svyby(~is_response, ~race_eth_cat, svy, svymean, na.rm = TRUE)
+        white <- props$is_response[grepl("White", props$race_eth_cat)] * 100
+        black <- props$is_response[grepl("Black", props$race_eth_cat)] * 100
+        sprintf("%+.1f", white[1] - black[1])
+      }, error = function(e) "—")
+      
+      edu1_diff <- tryCatch({
+        edu_data <- temp_data |> filter(education_cat %in% c("Less than high school", "Postgraduate study/professional degree"))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = edu_data)
+        props <- svyby(~is_response, ~education_cat, svy, svymean, na.rm = TRUE)
+        postgrad <- props$is_response[props$education_cat == "Postgraduate study/professional degree"] * 100
+        less_hs <- props$is_response[props$education_cat == "Less than high school"] * 100
+        sprintf("%+.1f", postgrad - less_hs)
+      }, error = function(e) "—")
+      
+      edu2_diff <- tryCatch({
+        edu_binary_data <- temp_data |> filter(!is.na(education_binary))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = edu_binary_data)
+        props <- svyby(~is_response, ~education_binary, svy, svymean, na.rm = TRUE)
+        bachelor_plus <- props$is_response[props$education_binary == "Bachelor's or More"] * 100
+        hs_or_less <- props$is_response[props$education_binary == "HS or Less"] * 100
+        sprintf("%+.1f", bachelor_plus - hs_or_less)
+      }, error = function(e) "—")
+      
+      results_list[[paste0("jhu5a_", response)]] <- tibble(
+        Question = response,
+        `Age: 60+ vs 18-29` = age_diff,
+        `Gender: Male vs Female` = gender_diff,
+        `Income: $100K+ vs <$30K` = income_diff,
+        `Race: White vs Black` = race_diff,
+        `Educ 1: Postgrad vs <HS` = edu1_diff,
+        `Educ 2: Bachelor+ vs HS-` = edu2_diff
+      )
+    }, error = function(e) NULL)
+  }
+  
+  # Add empty row
+  results_list[["empty2"]] <- tibble(
+    Question = "",
+    `Age: 60+ vs 18-29` = "",
+    `Gender: Male vs Female` = "",
+    `Income: $100K+ vs <$30K` = "",
+    `Race: White vs Black` = "",
+    `Educ 1: Postgrad vs <HS` = "",
+    `Educ 2: Bachelor+ vs HS-` = ""
+  )
+  
+  # Process JHU6C - Remove school vaccination requirements
+  results_list[["header_jhu6c"]] <- tibble(
+    Question = "<strong>Removing school vaccination requirements for children</strong>",
+    `Age: 60+ vs 18-29` = "",
+    `Gender: Male vs Female` = "",
+    `Income: $100K+ vs <$30K` = "",
+    `Race: White vs Black` = "",
+    `Educ 1: Postgrad vs <HS` = "",
+    `Educ 2: Bachelor+ vs HS-` = ""
+  )
+  
+  # Process JHU6C responses
+  for (response in c("Strongly support", "Support", "Neither support nor oppose", "Oppose", "Strongly oppose")) {
+    tryCatch({
+      temp_data <- data |>
+        filter(
+          !is.na(JHU6C),
+          !JHU6C %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED")
+        ) |>
+        mutate(
+          is_response = as.numeric(JHU6C == response),
+          education_binary = case_when(
+            education_cat %in% c("Less than high school", "High school graduate or equivalent") ~ "HS or Less",
+            education_cat %in% c("Bachelor's degree", "Postgraduate study/professional degree") ~ "Bachelor's or More",
+            TRUE ~ NA_character_
+          )
+        )
+      
+      # Calculate differences (same pattern as above)
+      age_diff <- tryCatch({
+        age_data <- temp_data |> filter(!is.na(age_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = age_data)
+        props <- svyby(~is_response, ~age_cat, svy, svymean, na.rm = TRUE)
+        age_60plus <- props$is_response[props$age_cat == "60+"] * 100
+        age_18_29 <- props$is_response[props$age_cat == "18-29"] * 100
+        sprintf("%+.1f", age_60plus - age_18_29)
+      }, error = function(e) "—")
+      
+      gender_diff <- tryCatch({
+        gender_data <- temp_data |> filter(!is.na(gender_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = gender_data)
+        props <- svyby(~is_response, ~gender_cat, svy, svymean, na.rm = TRUE)
+        male <- props$is_response[props$gender_cat == "Male"] * 100
+        female <- props$is_response[props$gender_cat == "Female"] * 100
+        sprintf("%+.1f", male - female)
+      }, error = function(e) "—")
+      
+      income_diff <- tryCatch({
+        income_data <- temp_data |> filter(!is.na(income_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = income_data)
+        props <- svyby(~is_response, ~income_cat, svy, svymean, na.rm = TRUE)
+        high_income <- props$is_response[props$income_cat == "$100,000 or more"] * 100
+        low_income <- props$is_response[props$income_cat == "Less than $30,000"] * 100
+        sprintf("%+.1f", high_income - low_income)
+      }, error = function(e) "—")
+      
+      race_diff <- tryCatch({
+        race_data <- temp_data |> filter(!is.na(race_eth_cat))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = race_data)
+        props <- svyby(~is_response, ~race_eth_cat, svy, svymean, na.rm = TRUE)
+        white <- props$is_response[grepl("White", props$race_eth_cat)] * 100
+        black <- props$is_response[grepl("Black", props$race_eth_cat)] * 100
+        sprintf("%+.1f", white[1] - black[1])
+      }, error = function(e) "—")
+      
+      edu1_diff <- tryCatch({
+        edu_data <- temp_data |> filter(education_cat %in% c("Less than high school", "Postgraduate study/professional degree"))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = edu_data)
+        props <- svyby(~is_response, ~education_cat, svy, svymean, na.rm = TRUE)
+        postgrad <- props$is_response[props$education_cat == "Postgraduate study/professional degree"] * 100
+        less_hs <- props$is_response[props$education_cat == "Less than high school"] * 100
+        sprintf("%+.1f", postgrad - less_hs)
+      }, error = function(e) "—")
+      
+      edu2_diff <- tryCatch({
+        edu_binary_data <- temp_data |> filter(!is.na(education_binary))
+        svy <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = edu_binary_data)
+        props <- svyby(~is_response, ~education_binary, svy, svymean, na.rm = TRUE)
+        bachelor_plus <- props$is_response[props$education_binary == "Bachelor's or More"] * 100
+        hs_or_less <- props$is_response[props$education_binary == "HS or Less"] * 100
+        sprintf("%+.1f", bachelor_plus - hs_or_less)
+      }, error = function(e) "—")
+      
+      results_list[[paste0("jhu6c_", response)]] <- tibble(
+        Question = response,
+        `Age: 60+ vs 18-29` = age_diff,
+        `Gender: Male vs Female` = gender_diff,
+        `Income: $100K+ vs <$30K` = income_diff,
+        `Race: White vs Black` = race_diff,
+        `Educ 1: Postgrad vs <HS` = edu1_diff,
+        `Educ 2: Bachelor+ vs HS-` = edu2_diff
+      )
+    }, error = function(e) NULL)
+  }
+  
+  bind_rows(results_list)
+}
+
+# Generate the comprehensive table
+table_4a <- calculate_demographic_differences()
+
+# Display the table
+table_4a |>
+  kable(escape = FALSE, format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = TRUE) |>
+  column_spec(1, width = "30%") |>
+  column_spec(2:ncol(table_4a), width = paste0(70/(ncol(table_4a)-1), "%")) |>
+  row_spec(which(str_detect(table_4a$Question, "<strong>")), bold = TRUE)
+```
+
+### Table 4B. Education Data Exploration
+
+#### JHU7_9 (Vaccines as Election Issue)
+
+```{r jhu7_9_data_exploration}
+#| echo: false
+#| warning: false
+#| message: false
+
+# 1. JHU7_9 - Vaccines as election issue
+jhu7_9_data <- data |>
+  filter(
+    !is.na(JHU7_9),
+    !JHU7_9 %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+    !is.na(education_cat),
+    !is.na(WEIGHT_EN)
+  )
+
+# Response categories - drop unused factor levels
+jhu7_9_data$JHU7_9 <- droplevels(jhu7_9_data$JHU7_9)
+response_table_7_9 <- as.data.frame(table(jhu7_9_data$JHU7_9))
+names(response_table_7_9) <- c("Response", "Count")
+
+cat("Total N:", nrow(jhu7_9_data), "\n")
+
+kable(response_table_7_9, caption = "JHU7_9 Response Categories") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# Crosstab
+crosstab_7_9 <- table(jhu7_9_data$JHU7_9, jhu7_9_data$education_cat)
+kable(crosstab_7_9, caption = "JHU7_9 x Education (Unweighted)") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# Unweighted Chi-square test
+chi_test_7_9 <- chisq.test(crosstab_7_9)
+cat("Unweighted Chi-square: χ² =", round(chi_test_7_9$statistic, 3), 
+    ", df =", chi_test_7_9$parameter, 
+    ", p-value =", format(chi_test_7_9$p.value, digits = 4), "\n")
+
+# Weighted Rao-Scott Chi-square test
+svy_7_9 <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = jhu7_9_data)
+rao_scott_7_9 <- svychisq(~JHU7_9 + education_cat, design = svy_7_9, statistic = "Chisq")
+cat("Rao-Scott Chi-square: χ² =", round(as.numeric(rao_scott_7_9$statistic), 3), 
+    ", df =", as.numeric(rao_scott_7_9$parameter), 
+    ", p-value =", format(as.numeric(rao_scott_7_9$p.value), digits = 4), "\n")
+```
+
+#### JHU5A (Continue Government Support for Vaccines)
+
+```{r jhu5a_data_exploration}
+#| echo: false
+#| warning: false
+#| message: false
+
+# 2. JHU5A - Continue government support
+jhu5a_data <- data |>
+  filter(
+    !is.na(JHU5A),
+    !JHU5A %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+    !is.na(education_cat),
+    !is.na(WEIGHT_EN)
+  )
+
+# Response categories - drop unused factor levels
+jhu5a_data$JHU5A <- droplevels(jhu5a_data$JHU5A)
+response_table_5a <- as.data.frame(table(jhu5a_data$JHU5A))
+names(response_table_5a) <- c("Response", "Count")
+
+cat("Total N:", nrow(jhu5a_data), "\n")
+
+kable(response_table_5a, caption = "JHU5A Response Categories") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# Crosstab
+crosstab_5a <- table(jhu5a_data$JHU5A, jhu5a_data$education_cat)
+kable(crosstab_5a, caption = "JHU5A x Education (Unweighted)") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# Unweighted Chi-square test
+chi_test_5a <- chisq.test(crosstab_5a)
+cat("Unweighted Chi-square: χ² =", round(chi_test_5a$statistic, 3), 
+    ", df =", chi_test_5a$parameter, 
+    ", p-value =", format(chi_test_5a$p.value, digits = 4), "\n")
+
+# Weighted Rao-Scott Chi-square test
+svy_5a <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = jhu5a_data)
+rao_scott_5a <- svychisq(~JHU5A + education_cat, design = svy_5a, statistic = "Chisq")
+cat("Rao-Scott Chi-square: χ² =", round(as.numeric(rao_scott_5a$statistic), 3), 
+    ", df =", as.numeric(rao_scott_5a$parameter), 
+    ", p-value =", format(as.numeric(rao_scott_5a$p.value), digits = 4), "\n")
+```
+
+#### JHU6C (Removing School Vaccination Requirements)
+
+```{r jhu6c_data_exploration}
+#| echo: false
+#| warning: false
+#| message: false
+
+# 3. JHU6C - Remove school vaccination requirements
+jhu6c_data <- data |>
+  filter(
+    !is.na(JHU6C),
+    !JHU6C %in% c("DON'T KNOW", "SKIPPED ON WEB", "REFUSED"),
+    !is.na(education_cat),
+    !is.na(WEIGHT_EN)
+  )
+
+# Response categories - drop unused factor levels
+jhu6c_data$JHU6C <- droplevels(jhu6c_data$JHU6C)
+response_table_6c <- as.data.frame(table(jhu6c_data$JHU6C))
+names(response_table_6c) <- c("Response", "Count")
+
+cat("Total N:", nrow(jhu6c_data), "\n")
+
+kable(response_table_6c, caption = "JHU6C Response Categories") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# Crosstab
+crosstab_6c <- table(jhu6c_data$JHU6C, jhu6c_data$education_cat)
+kable(crosstab_6c, caption = "JHU6C x Education (Unweighted)") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+# Unweighted Chi-square test
+chi_test_6c <- chisq.test(crosstab_6c)
+cat("Unweighted Chi-square: χ² =", round(chi_test_6c$statistic, 3), 
+    ", df =", chi_test_6c$parameter, 
+    ", p-value =", format(chi_test_6c$p.value, digits = 4), "\n")
+
+# Weighted Rao-Scott Chi-square test
+svy_6c <- svydesign(ids = ~1, weights = ~WEIGHT_EN, data = jhu6c_data)
+rao_scott_6c <- svychisq(~JHU6C + education_cat, design = svy_6c, statistic = "Chisq")
+cat("Rao-Scott Chi-square: χ² =", round(as.numeric(rao_scott_6c$statistic), 3), 
+    ", df =", as.numeric(rao_scott_6c$parameter), 
+    ", p-value =", format(as.numeric(rao_scott_6c$p.value), digits = 4), "\n")
+```
+
 
 ## Save Tables for Word Document
 
@@ -862,4 +1742,9 @@ saveRDS(appendix_3a, "output/appendix_3a_age.rds")
 saveRDS(appendix_3b, "output/appendix_3b_gender.rds")
 saveRDS(appendix_3c, "output/appendix_3c_income.rds")
 saveRDS(appendix_3d, "output/appendix_3d_race.rds")
+saveRDS(appendix_3e, "output/appendix_3e_education.rds")
+saveRDS(appendix_3f, "output/appendix_3f_education_collapsed.rds")
+
+# Save Table 4A comprehensive demographic differences
+saveRDS(table_4a, "output/table_4a_demographic_differences.rds")
 ```
