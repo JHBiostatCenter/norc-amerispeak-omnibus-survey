@@ -1,5 +1,5 @@
-# Load raw data
-raw_data <- haven::read_sas("data/omnibusw2_november2024_jhu_20241127.sas7bdat")
+# Load raw data - using SPSS file for clean data (SAS file has 8 corrupted rows)
+raw_data <- haven::read_sav("data/OmnibusW2_November2024_JHU_20241127.sav")
 data <- raw_data
 
 source("data-labels.R")

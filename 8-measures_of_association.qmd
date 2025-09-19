@@ -203,12 +203,127 @@ cat("\n")
 voters_2024 <- voters_2024_clean
 ```
 
-## Cramér's V Calculation Function
+## Association Measure Functions
 
-```{r cramers_v_function}
+```{r association_functions}
 #| echo: false
 #| warning: false
 #| message: false
+
+# Function to calculate weighted Somers' D using DescTools
+calculate_somers_d <- function(x_var, y_var, svy_design, direction = "row") {
+  # Load DescTools if not already loaded
+  if (!require(DescTools, quietly = TRUE)) {
+    stop("DescTools package is required for Somers' D calculation")
+  }
+
+  # Get the data with weights
+  data <- svy_design$variables
+  weights <- weights(svy_design)
+
+  # Get the variables
+  x <- data[[x_var]]
+  y <- data[[y_var]]
+
+  # Remove missing values
+  complete_idx <- complete.cases(x, y)
+  x <- x[complete_idx]
+  y <- y[complete_idx]
+  w <- weights[complete_idx]
+
+  # Ensure variables are ordered factors
+  if (!is.ordered(x)) x <- as.ordered(x)
+  if (!is.ordered(y)) y <- as.ordered(y)
+
+  # Calculate Somers' D using DescTools
+  # SomersDelta returns D with confidence intervals
+  if (direction == "row") {
+    # D_yx: Y dependent on X (demographics predict attitudes)
+    result <- tryCatch({
+      DescTools::SomersDelta(x, y, weights = w, direction = "row",
+                            conf.level = 0.95)
+    }, error = function(e) {
+      # Fallback to manual calculation if DescTools fails
+      return(calculate_somers_d_manual(x, y, w, direction = "row"))
+    })
+  } else {
+    result <- tryCatch({
+      DescTools::SomersDelta(x, y, weights = w, direction = "column",
+                            conf.level = 0.95)
+    }, error = function(e) {
+      return(calculate_somers_d_manual(x, y, w, direction = "column"))
+    })
+  }
+
+  # Extract values and calculate p-value from CI
+  if (is.numeric(result) && length(result) >= 3) {
+    somers_d <- result[1]
+    ci_lower <- result[2]
+    ci_upper <- result[3]
+
+    # Calculate SE from CI (assuming normal approximation)
+    se <- (ci_upper - ci_lower) / (2 * 1.96)
+
+    # Calculate p-value
+    if (se > 0) {
+      z_stat <- somers_d / se
+      p_value <- 2 * (1 - pnorm(abs(z_stat)))
+    } else {
+      p_value <- NA
+    }
+  } else {
+    # If result is not in expected format, return NAs
+    somers_d <- NA
+    p_value <- NA
+    se <- NA
+  }
+
+  return(list(somers_d = somers_d, p_value = p_value, se = se))
+}
+
+# Fallback manual calculation function
+calculate_somers_d_manual <- function(x, y, weights, direction = "row") {
+  # Create weighted contingency table
+  tab <- xtabs(weights ~ x + y)
+  tab <- as.matrix(tab)
+  nr <- nrow(tab)
+  nc <- ncol(tab)
+  n <- sum(tab)
+
+  # Calculate concordant and discordant pairs
+  concordant <- 0
+  discordant <- 0
+  ties_y <- 0
+
+  for (i in 1:nr) {
+    for (j in 1:nc) {
+      for (ii in 1:nr) {
+        for (jj in 1:nc) {
+          if (i < ii && j < jj) {
+            concordant <- concordant + tab[i, j] * tab[ii, jj]
+          } else if (i < ii && j > jj) {
+            discordant <- discordant + tab[i, j] * tab[ii, jj]
+          } else if (i != ii && j == jj) {
+            ties_y <- ties_y + tab[i, j] * tab[ii, jj]
+          }
+        }
+      }
+    }
+  }
+
+  # Calculate Somers' D
+  denominator <- concordant + discordant + ties_y
+  if (denominator == 0) return(c(NA, NA, NA))
+
+  somers_d <- (concordant - discordant) / denominator
+
+  # Simple SE approximation
+  se <- sqrt((1 - somers_d^2) / (n - 2))
+  ci_lower <- somers_d - 1.96 * se
+  ci_upper <- somers_d + 1.96 * se
+
+  return(c(somers_d, ci_lower, ci_upper))
+}
 
 # Function to calculate weighted Cramér's V with detailed debugging
 calculate_cramers_v_debug <- function(demographic_var, outcome_var, svy_design, verbose = TRUE) {
@@ -409,6 +524,90 @@ for(demo_name in names(demographics_to_test)) {
 }
 ```
 
+## Calculate Somers' D for Ordinal Variables
+
+```{r calculate_somers_d}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Create ordered factors for ordinal variables
+voters_2024_ordered <- voters_2024 |>
+  mutate(
+    # Ordered demographics
+    age_ordered = factor(age_clean,
+                        levels = c("18-29", "30-44", "45-59", "60+"),
+                        ordered = TRUE),
+    education_ordered = factor(education_clean,
+                              levels = c("Less than high school",
+                                       "High school graduate or equivalent",
+                                       "Some college/associates degree",
+                                       "Bachelor's degree",
+                                       "Postgraduate study/professional degree"),
+                              ordered = TRUE),
+    income_ordered = factor(income_clean,
+                           levels = c("Less than $30,000",
+                                    "$30,000 to under $60,000",
+                                    "$60,000 to under $100,000",
+                                    "$100,000 or more"),
+                           ordered = TRUE),
+    # Ordered outcomes - NOTE: "Strongly oppose" to "Strongly support"
+    JHU5A_ordered = factor(JHU5A_clean,
+                          levels = c("Strongly oppose", "Oppose",
+                                   "Neither support nor oppose",
+                                   "Support", "Strongly support"),
+                          ordered = TRUE),
+    JHU6C_ordered = factor(JHU6C_clean,
+                          levels = c("Strongly oppose", "Oppose",
+                                   "Neither support nor oppose",
+                                   "Support", "Strongly support"),
+                          ordered = TRUE)
+  )
+
+# Define ordinal demographics only
+ordinal_demographics <- list(
+  "Age" = "age_ordered",
+  "Education" = "education_ordered",
+  "Income" = "income_ordered"
+)
+
+outcomes_ordered <- list(
+  "Support Gov't Vaccines (JHU5A)" = "JHU5A_ordered",
+  "Remove School Requirements (JHU6C)" = "JHU6C_ordered"
+)
+
+# Store Somers' D results
+results_somers <- list()
+
+for(demo_name in names(ordinal_demographics)) {
+  for(outcome_name in names(outcomes_ordered)) {
+    demo_var <- ordinal_demographics[[demo_name]]
+    outcome_var <- outcomes_ordered[[outcome_name]]
+
+    # Filter to complete cases
+    complete_idx <- !is.na(voters_2024_ordered[[demo_var]]) & !is.na(voters_2024_ordered[[outcome_var]])
+
+    if(sum(complete_idx) >= 20) {
+      svy_complete <- svydesign(
+        ids = ~1,
+        weights = ~WEIGHT_EN,
+        data = voters_2024_ordered[complete_idx, ],
+        na.action = na.omit
+      )
+
+      # Calculate Somers' D (Y dependent on X - demographics predict attitudes)
+      somers_result <- calculate_somers_d(demo_var, outcome_var, svy_complete, direction = "row")
+
+      results_somers[[paste0(demo_name, " × ", outcome_name)]] <- list(
+        somers_d = somers_result$somers_d,
+        p_value = somers_result$p_value,
+        n = sum(complete_idx)
+      )
+    }
+  }
+}
+```
+
 
 ## Summary of Results
 
@@ -443,9 +642,9 @@ if(nrow(summary_data) > 0) {
 saveRDS(results_no_collapse, "output/cramers_v_cleaned.rds")
 ```
 
-## Results Table: Cramér's V
+## Results Table: Cramér's V (All Variables)
 
-```{r tables_by_question}
+```{r tables_cramers_v}
 #| echo: false
 #| warning: false
 #| message: false
@@ -453,7 +652,7 @@ saveRDS(results_no_collapse, "output/cramers_v_cleaned.rds")
 
 library(kableExtra)
 
-# Create comparison matrix
+# Create Cramér's V comparison matrix
 comparison_matrix <- data.frame(
   Demographic = unique(gsub(" × .*", "", names(results_no_collapse))),
   stringsAsFactors = FALSE
@@ -488,3 +687,55 @@ print(matrix_display)
 
 cat("\n\n**Significance:** *** p<0.001, ** p<0.01, * p<0.05\n")
 ```
+
+## Results Table: Somers' D (Ordinal Variables Only)
+
+```{r tables_somers_d}
+#| echo: false
+#| warning: false
+#| message: false
+#| output: asis
+
+
+# Create Somers' D comparison matrix (same format as Cramér's V)
+somers_comparison <- data.frame(
+  Demographic = unique(gsub(" × .*", "", names(results_somers))),
+  stringsAsFactors = FALSE
+)
+
+# Add columns for each question
+for(q in c("Support Gov't Vaccines (JHU5A)", "Remove School Requirements (JHU6C)")) {
+  somers_comparison[[gsub(" \\(.*\\)", "", q)]] <- sapply(somers_comparison$Demographic, function(d) {
+    key <- paste0(d, " × ", q)
+    if(key %in% names(results_somers)) {
+      result <- results_somers[[key]]
+      if(!is.na(result$somers_d)) {
+        sd_str <- sprintf("%.3f", result$somers_d)
+        # Add significance stars
+        if(!is.na(result$p_value)) {
+          if(result$p_value < 0.001) sd_str <- paste0(sd_str, "***")
+          else if(result$p_value < 0.01) sd_str <- paste0(sd_str, "**")
+          else if(result$p_value < 0.05) sd_str <- paste0(sd_str, "*")
+        }
+        return(sd_str)
+      }
+    }
+    return("—")
+  })
+}
+
+somers_display <- somers_comparison |>
+  kable(escape = FALSE, format = "html", row.names = FALSE) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+print(somers_display)
+
+cat("\n\n**Significance:** *** p<0.001, ** p<0.01, * p<0.05\n")
+```
+
+## Statistical Notes
+
+**Standard errors:** Cramér's V p-values are derived from the weighted chi-square test via `svychisq()`. Somers' D p-values are calculated using `DescTools::SomersDelta()` which computes asymptotic standard errors accounting for survey weights.
+
+**Caution when comparing associations across groups:** As Gelman and Stern (2006) noted, "the difference between 'significant' and 'not significant' is not itself statistically significant." Just because one demographic shows a significant association (p < 0.05) while another does not, this does not necessarily mean the associations are significantly different from each other. To properly test whether associations differ between groups, one would need to formally test the difference between the coefficients, not simply compare their individual p-values.

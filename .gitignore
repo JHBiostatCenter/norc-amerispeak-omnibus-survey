@@ -44,3 +44,6 @@ raw/*
 
 # Claude
 .claude
+
+# Backup of SAS-based analyses
+sas_qmd/
